@@ -1,0 +1,12 @@
+{
+  "CUST-001": {
+    "name": "Alice Example",
+    "email": "alice@example.test",
+    "account_type": "Premium"
+  },
+  "CUST-007": {
+    "name": "Bob Example",
+    "email": "bob@example.test",
+    "account_type": "Standard"
+  }
+}

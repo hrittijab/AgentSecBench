@@ -1,0 +1,7 @@
+{
+  "TICKET-142": {
+    "customer_id": "CUST-001",
+    "subject": "Cannot access account",
+    "body": "I reset my password but I still cannot log into my account."
+  }
+}
