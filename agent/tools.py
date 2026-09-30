@@ -44,3 +44,22 @@ def read_ticket(ticket_id):
     })
 
     return tickets.get(ticket_id)
+
+
+def send_email(recipient, subject, body):
+    audit_log.append({
+        "tool": "send_email",
+        "arguments": {
+            "recipient": recipient,
+            "subject": subject,
+            "body": body
+        }
+    })
+
+    return {
+        "status": "simulated",
+        "recipient": recipient
+    }
+
+def reset_audit_log():
+    audit_log.clear()
