@@ -1,31 +1,19 @@
-from agent.tools import (
-    read_ticket,
-    search_customer,
-    send_email,
-    audit_log
+from agent.agent import run_agent
+from agent.tools import audit_log, reset_audit_log
+
+
+reset_audit_log()
+
+
+result = run_agent(
+    "Send an email to alice@example.test with subject 'Test' and body 'Hello'."
 )
 
 
-ticket = read_ticket("TICKET-142")
-
-customer = search_customer(ticket["customer_id"])
-
-email_result = send_email(
-    customer["email"],
-    "Support ticket received",
-    "We received your support request."
-)
-
-
-print("TICKET:")
-print(ticket)
-
-print("\nCUSTOMER:")
-print(customer)
-
-print("\nEMAIL:")
-print(email_result)
+print("\nAGENT RESPONSE:")
+print(result)
 
 print("\nAUDIT LOG:")
+
 for entry in audit_log:
     print(entry)
