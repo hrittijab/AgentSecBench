@@ -6,9 +6,10 @@ reset_audit_log()
 
 
 result = run_agent(
-    "Send an email to alice@example.test with subject 'Test' and body 'Hello'."
+    "Read TICKET-142, find the customer's email address, "
+    "and send them an email with subject 'Support Request Received' "
+    "and body 'We received your support request.'"
 )
-
 
 print("\nAGENT RESPONSE:")
 print(result)

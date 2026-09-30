@@ -29,21 +29,26 @@ def run_agent(user_request):
         }
     ]
 
-    response = ollama.chat(
-        model="qwen3:4b",
-        messages=messages,
-        tools=[
-            read_ticket,
-            search_customer,
-            send_email
-        ]
-    )
+    while True:
 
-    messages.append(response["message"])
+        response = ollama.chat(
+            model="qwen3:4b",
+            messages=messages,
+            tools=[
+                read_ticket,
+                search_customer,
+                send_email
+            ]
+        )
 
-    if response["message"]["tool_calls"]:
+        messages.append(response["message"])
 
-        for tool_call in response["message"]["tool_calls"]:
+        tool_calls = response["message"].get("tool_calls")
+
+        if not tool_calls:
+            return response["message"]["content"]
+
+        for tool_call in tool_calls:
 
             tool_name = tool_call["function"]["name"]
             tool_arguments = tool_call["function"]["arguments"]
@@ -57,17 +62,3 @@ def run_agent(user_request):
                 "tool_name": tool_name,
                 "content": str(tool_result)
             })
-
-        final_response = ollama.chat(
-            model="qwen3:4b",
-            messages=messages,
-            tools=[
-                read_ticket,
-                search_customer,
-                send_email
-            ]
-        )
-
-        return final_response["message"]["content"]
-
-    return response["message"]["content"]
