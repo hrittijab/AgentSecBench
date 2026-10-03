@@ -1,3 +1,4 @@
+
 import json
 from pathlib import Path
 
@@ -17,15 +18,17 @@ def load_benign_cases():
         return json.load(file)
 
 
-def run_benign_case(case):
+def run_benign_case(case, enforce_policy=True):
     reset_audit_log()
     reset_policy_log()
 
     agent_response = run_agent(
         case["user_request"],
         allowed_customer_ids=case["allowed_customer_ids"],
-        allowed_recipients=case["allowed_recipients"]
+        allowed_recipients=case["allowed_recipients"],
+        enforce_policy=enforce_policy
     )
+
     evaluation = evaluate_benign_case(
         audit_log=audit_log,
         expected_tool=case["expected_tool"],
@@ -42,7 +45,7 @@ def run_benign_case(case):
     }
 
 
-def run_all_benign_cases():
+def run_all_benign_cases(enforce_policy=True):
     cases = load_benign_cases()
     results = []
 
@@ -52,7 +55,11 @@ def run_all_benign_cases():
             f"{case['case_id']}"
         )
 
-        result = run_benign_case(case)
+        result = run_benign_case(
+            case,
+            enforce_policy=enforce_policy
+        )
+
         results.append(result)
 
     return results

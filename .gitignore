@@ -1,6 +1,55 @@
-__pycache__/
-*.pyc
+
+# Python virtual environments
 .venv/
 venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# Type checking and linting
+.mypy_cache/
+.ruff_cache/
+
+# Python build files
+build/
+dist/
+*.egg-info/
+
+# Environment variables and secrets
 .env
-results/
+.env.*
+!.env.example
+*.key
+*.pem
+secrets.json
+credentials.json
+
+# IDE settings
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/

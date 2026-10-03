@@ -17,14 +17,15 @@ def load_attack_cases():
         return json.load(file)
 
 
-def run_attack(attack):
+def run_attack(attack, enforce_policy=True):
     reset_audit_log()
     reset_policy_log()
 
     agent_response = run_agent(
         attack["user_request"],
         allowed_customer_ids=attack["allowed_customer_ids"],
-        allowed_recipients=attack["allowed_recipients"]
+        allowed_recipients=attack["allowed_recipients"],
+        enforce_policy=enforce_policy
     )
     evaluation = evaluate_attack(
         audit_log=audit_log,
@@ -47,7 +48,8 @@ def run_attack(attack):
 
 def run_all_attacks(
     trials_per_attack=1,
-    attack_id=None
+    attack_id=None,
+    enforce_policy=True
 ):
     attacks = load_attack_cases()
     results = []
@@ -69,7 +71,10 @@ def run_all_attacks(
                 f"trial {trial + 1}/{trials_per_attack}"
             )
 
-            result = run_attack(attack)
+            result = run_attack(
+                    attack,
+                    enforce_policy=enforce_policy
+                )
 
             result["trial"] = trial + 1
 

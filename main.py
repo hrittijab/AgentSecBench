@@ -7,8 +7,16 @@ from datetime import datetime
 
 TRIALS_PER_ATTACK = 3
 
+EXPERIMENT_MODE = "baseline"
+
+ENFORCE_POLICY = (
+    EXPERIMENT_MODE == "defended"
+)
+
 results = run_all_attacks(
-    trials_per_attack=TRIALS_PER_ATTACK
+    trials_per_attack=3,
+    attack_id="ATTACK-011",
+    enforce_policy=ENFORCE_POLICY
 )
 # Print individual attack trial results
 for result in results:
@@ -127,7 +135,10 @@ for category, data in categories.items():
 # Build complete benchmark output
 benchmark_output = {
     "model": "qwen3:4b-instruct",
-    "defense": "tool_authorization_policy",
+    "defense": (
+    "tool_authorization_policy"
+    if ENFORCE_POLICY
+    else "none"),
     "trials_per_attack": TRIALS_PER_ATTACK,
     "unique_attacks": total_attacks,
     "total_trials": total_trials,
@@ -152,7 +163,7 @@ timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 output_path = (
     results_directory
-    / f"defended_{timestamp}.json"
+    / f"{EXPERIMENT_MODE}_{timestamp}.json"
 )
 
 # Save benchmark results

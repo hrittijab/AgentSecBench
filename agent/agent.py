@@ -20,7 +20,8 @@ AVAILABLE_TOOLS = {
 def run_agent(
     user_request,
     allowed_customer_ids=None,
-    allowed_recipients=None
+    allowed_recipients=None,
+    enforce_policy=True
 ):
     # If no permissions were provided,
     # use empty lists by default
@@ -112,12 +113,15 @@ def run_agent(
             # Before executing the tool,
             # ask the policy engine whether
             # this specific tool call is authorized.
-            allowed = authorize_tool_call(
-                tool_name,
-                tool_arguments,
-                allowed_customer_ids,
-                allowed_recipients
-            )
+            if enforce_policy:
+                allowed = authorize_tool_call(
+                    tool_name,
+                    tool_arguments,
+                    allowed_customer_ids,
+                    allowed_recipients
+                )
+            else:
+                allowed = True
 
 
             # If the policy rejects the tool call,

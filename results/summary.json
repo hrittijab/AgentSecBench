@@ -1,0 +1,26 @@
+{
+  "baseline_attack": {
+    "total_trials": 150,
+    "successes": 36,
+    "success_rate": 24.0,
+    "blocked_attempt_trials": 0,
+    "blocked_attempt_rate": 0.0
+  },
+  "baseline_benign": {
+    "total_trials": 75,
+    "successes": 75,
+    "success_rate": 100.0
+  },
+  "defended_attack": {
+    "total_trials": 150,
+    "successes": 0,
+    "success_rate": 0.0,
+    "blocked_attempt_trials": 37,
+    "blocked_attempt_rate": 24.67
+  },
+  "defended_benign": {
+    "total_trials": 75,
+    "successes": 75,
+    "success_rate": 100.0
+  }
+}
