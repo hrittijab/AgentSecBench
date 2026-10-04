@@ -24,11 +24,22 @@ AVAILABLE_TOOLS = {
 }
 
 
+def _get_field(obj, key, default=None):
+    """
+    Support both dictionary and Ollama object responses.
+    """
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+
+    return getattr(obj, key, default)
+
+
 def run_agent(
     user_request,
     allowed_customer_ids=None,
     allowed_recipients=None,
-    enforce_policy=True
+    enforce_policy=True,
+    return_metadata=False
 ):
     # Default permissions
     if allowed_customer_ids is None:
@@ -36,6 +47,29 @@ def run_agent(
 
     if allowed_recipients is None:
         allowed_recipients = []
+
+    # Model execution metadata
+    metadata = {
+        "model": MODEL_NAME,
+        "max_output_tokens": MAX_OUTPUT_TOKENS,
+        "max_agent_steps": MAX_AGENT_STEPS,
+        "steps_used": 0,
+        "status": "running",
+        "truncated": False,
+        "truncation_suspected": False,
+        "model_calls": []
+    }
+
+    def finish(content, status):
+        metadata["status"] = status
+
+        if return_metadata:
+            return {
+                "content": content,
+                "metadata": metadata
+            }
+
+        return content
 
     # Conversation sent to the model
     messages = [
@@ -83,12 +117,54 @@ def run_agent(
             f"[Agent] Model finished step {step + 1}."
         )
 
+        metadata["steps_used"] = step + 1
+
+        # Read Ollama completion information
+        done_reason = _get_field(
+            response, "done_reason"
+        )
+        eval_count = _get_field(
+            response, "eval_count"
+        )
+        prompt_eval_count = _get_field(
+            response, "prompt_eval_count"
+        )
+
+        # Ollama may report "length" when the
+        # output limit is reached.
+        length_limit_hit = (
+            done_reason == "length"
+        )
+
+        # Token count alone is not definitive,
+        # but it is worth investigating.
+        near_token_limit = (
+            isinstance(eval_count, (int, float))
+            and eval_count >= MAX_OUTPUT_TOKENS
+        )
+
+        metadata["model_calls"].append({
+            "step": step + 1,
+            "done_reason": done_reason,
+            "eval_count": eval_count,
+            "prompt_eval_count": prompt_eval_count,
+            "length_limit_hit": length_limit_hit,
+            "near_token_limit": near_token_limit
+        })
+
+        if length_limit_hit:
+            metadata["truncated"] = True
+
+        if near_token_limit:
+            metadata["truncation_suspected"] = True
+
         # Add assistant response to history
-        messages.append(response["message"])
+        message = _get_field(response, "message")
+        messages.append(message)
 
         # Check requested tools
-        tool_calls = response["message"].get(
-            "tool_calls"
+        tool_calls = _get_field(
+            message, "tool_calls"
         )
 
         # No tools requested
@@ -99,17 +175,30 @@ def run_agent(
                 "Agent finished."
             )
 
-            return response["message"]["content"]
+            status = (
+                "truncated"
+                if metadata["truncated"]
+                else "completed"
+            )
+
+            return finish(
+                _get_field(message, "content", ""),
+                status
+            )
 
         # Process requested tool calls
         for tool_call in tool_calls:
 
-            tool_name = (
-                tool_call["function"]["name"]
+            function = _get_field(
+                tool_call, "function"
             )
 
-            tool_arguments = (
-                tool_call["function"]["arguments"]
+            tool_name = _get_field(
+                function, "name"
+            )
+
+            tool_arguments = _get_field(
+                function, "arguments"
             )
 
             print(
@@ -164,7 +253,12 @@ def run_agent(
             })
 
     # Maximum agent steps reached
-    return (
+    return finish(
         "Agent stopped after reaching the "
-        "maximum number of tool steps."
+        "maximum number of tool steps.",
+        (
+            "truncated"
+            if metadata["truncated"]
+            else "max_steps"
+        )
     )
