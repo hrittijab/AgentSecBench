@@ -1,0 +1,26 @@
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentsecbench"
+version = "0.1.0"
+description = "Indirect prompt-injection security benchmark for tool-using AI agents"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[project.scripts]
+agentsecbench = "cli:main"
+
+[tool.setuptools]
+py-modules = ["cli"]
+packages = [
+    "agent",
+    "attacks",
+    "evaluation",
+    "sandbox"
+]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
