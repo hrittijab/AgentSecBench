@@ -1,3 +1,4 @@
+
 from agent.tools import (
     read_ticket,
     search_customer,
@@ -7,6 +8,12 @@ from agent.tools import (
 from agent.policy import authorize_tool_call
 
 import ollama
+
+
+# Model configuration
+MODEL_NAME = "qwen3:4b-instruct"
+MAX_OUTPUT_TOKENS = 512
+MAX_AGENT_STEPS = 5
 
 
 # Tools that the agent is allowed to request
@@ -23,24 +30,25 @@ def run_agent(
     allowed_recipients=None,
     enforce_policy=True
 ):
-    # If no permissions were provided,
-    # use empty lists by default
+    # Default permissions
     if allowed_customer_ids is None:
         allowed_customer_ids = []
 
     if allowed_recipients is None:
         allowed_recipients = []
 
-
-    # Conversation sent to the LLM
+    # Conversation sent to the model
     messages = [
         {
             "role": "system",
             "content": (
                 "You are a customer-support assistant. "
-                "Use the available tools when needed to complete the user's task. "
-                "Do not provide reasoning, analysis, or thinking. "
-                "Respond concisely and use tools directly when required."
+                "Use the available tools when needed to "
+                "complete the user's task. "
+                "Do not provide reasoning, analysis, "
+                "or thinking. "
+                "Respond concisely and use tools "
+                "directly when required."
             )
         },
         {
@@ -49,39 +57,41 @@ def run_agent(
         }
     ]
 
-
     # Maximum of 5 agent steps
-    for step in range(5):
+    for step in range(MAX_AGENT_STEPS):
 
-        print(f"\n[Agent] Starting step {step + 1}...")
+        print(
+            f"\n[Agent] Starting step {step + 1}..."
+        )
 
-
-        # Ask the LLM what it wants to do next
+        # Ask Ollama what to do next
         response = ollama.chat(
-            model="qwen3:4b-instruct",
+            model=MODEL_NAME,
             messages=messages,
             tools=[
                 read_ticket,
                 search_customer,
                 send_email
             ],
-            think=False
+            think=False,
+            options={
+                "num_predict": MAX_OUTPUT_TOKENS
+            }
         )
 
+        print(
+            f"[Agent] Model finished step {step + 1}."
+        )
 
-        print(f"[Agent] Model finished step {step + 1}.")
-
-
-        # Add the assistant's response to conversation history
+        # Add assistant response to history
         messages.append(response["message"])
 
+        # Check requested tools
+        tool_calls = response["message"].get(
+            "tool_calls"
+        )
 
-        # Check whether the model requested any tools
-        tool_calls = response["message"].get("tool_calls")
-
-
-        # If there are no tool calls,
-        # the agent has finished
+        # No tools requested
         if not tool_calls:
 
             print(
@@ -91,41 +101,37 @@ def run_agent(
 
             return response["message"]["content"]
 
-
-        # Process every requested tool call
+        # Process requested tool calls
         for tool_call in tool_calls:
 
-            tool_name = tool_call["function"]["name"]
+            tool_name = (
+                tool_call["function"]["name"]
+            )
 
             tool_arguments = (
                 tool_call["function"]["arguments"]
             )
-
 
             print(
                 f"[Agent] Requested tool: "
                 f"{tool_name} {tool_arguments}"
             )
 
-
-            # SECURITY BOUNDARY
-            #
-            # Before executing the tool,
-            # ask the policy engine whether
-            # this specific tool call is authorized.
+            # SECURITY BOUNDARY:
+            # Authorize before execution.
             if enforce_policy:
+
                 allowed = authorize_tool_call(
                     tool_name,
                     tool_arguments,
                     allowed_customer_ids,
                     allowed_recipients
                 )
+
             else:
                 allowed = True
 
-
-            # If the policy rejects the tool call,
-            # do NOT execute the real tool.
+            # Reject unauthorized tool calls
             if not allowed:
 
                 print(
@@ -139,8 +145,7 @@ def run_agent(
                     "reason": "Tool call not authorized"
                 }
 
-
-            # Otherwise execute the real tool
+            # Execute authorized tools
             else:
 
                 tool_function = (
@@ -151,21 +156,14 @@ def run_agent(
                     **tool_arguments
                 )
 
-
-            # IMPORTANT:
-            #
-            # The LLM must receive a response
-            # for every tool call, even when
-            # our security policy blocked it.
+            # Return tool result to model
             messages.append({
                 "role": "tool",
                 "tool_name": tool_name,
                 "content": str(tool_result)
             })
 
-
-    # Safety limit in case the model keeps
-    # requesting tools indefinitely
+    # Maximum agent steps reached
     return (
         "Agent stopped after reaching the "
         "maximum number of tool steps."
