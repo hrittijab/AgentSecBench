@@ -627,6 +627,12 @@ Only test systems and environments you are authorized to evaluate.
 
 ---
 
+## License
+
+AgentSecBench is licensed under the Apache License 2.0. See [`LICENSE`](LICENSE) for details.
+
+---
+
 ## Technical Documentation
 
 - [System Architecture](docs/ARCHITECTURE.md)
