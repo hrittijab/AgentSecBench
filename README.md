@@ -598,7 +598,7 @@ Useful areas include:
 
 For substantial benchmark changes, open an issue first so the threat model and expected evaluation behavior can be discussed before implementation.
 
-A dedicated `CONTRIBUTING.md` will document development and benchmark contribution requirements.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development setup, benchmark contribution requirements, testing expectations, reproducibility guidance, and pull request guidelines.
 
 ---
 

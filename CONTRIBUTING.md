@@ -1,8 +1,8 @@
 # Contributing to AgentSecBench
 
-Thanks for your interest in contributing to AgentSecBench.
+Thank you for your interest in contributing to AgentSecBench.
 
-AgentSecBench is a security evaluation framework for studying indirect prompt-injection attacks against tool-using AI agents. Contributions that improve attack coverage, authorization defenses, evaluation methodology, reproducibility, or documentation are welcome.
+AgentSecBench is a security benchmark for evaluating indirect prompt injection against tool-using AI agents. Contributions that improve attack coverage, authorization defenses, evaluation methodology, reproducibility, testing, or documentation are welcome.
 
 ## Ways to Contribute
 
@@ -10,23 +10,26 @@ Useful contributions include:
 
 - new indirect prompt-injection scenarios;
 - new attack categories or payload transformations;
-- additional sandbox tools and environments;
-- alternative authorization or containment mechanisms;
+- alternative authorization policies;
+- additional sandbox tools or agent environments;
 - support for additional models or runtimes;
-- security metrics and disclosure detectors;
-- benchmark reliability improvements;
-- tests and regression cases;
+- disclosure-detection techniques;
+- security metrics and analysis;
+- reproducibility improvements;
+- automated tests;
 - documentation improvements; and
-- reproducibility tooling.
+- bug fixes.
 
-Bug reports and benchmark methodology discussions are also valuable.
+For substantial changes to the benchmark methodology, threat model, attack dataset, or security metrics, please open an issue before beginning implementation.
 
-## Getting Started
+This helps ensure that proposed changes fit the benchmark's security model and can be evaluated consistently.
 
-Fork and clone the repository:
+## Development Setup
+
+Clone the repository:
 
 ```bash
-git clone https://github.com/<your-username>/AgentSecBench.git
+git clone https://github.com/hrittijab/AgentSecBench.git
 cd AgentSecBench
 ```
 
@@ -42,13 +45,13 @@ Activate it on Windows PowerShell:
 .\.venv\Scripts\Activate.ps1
 ```
 
-Or on macOS/Linux:
+On macOS or Linux:
 
 ```bash
 source .venv/bin/activate
 ```
 
-Install dependencies and the local package:
+Install the project:
 
 ```bash
 python -m pip install --upgrade pip
@@ -56,277 +59,219 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-Run the test suite before making changes:
+Run the automated test suite:
 
 ```bash
 python -m pytest -q
 ```
 
-## Development Principles
+Contributions should keep the existing automated tests passing.
 
-AgentSecBench treats benchmark integrity as part of the security problem.
+## Benchmark Contributions
 
-Contributions should preserve the distinction between:
+Benchmark changes require additional care because modifications can affect the interpretation and comparability of results.
 
-1. what the language model proposes;
-2. what the authorization layer permits;
-3. what the tool layer actually executes; and
-4. what the evaluator classifies as a security outcome.
+### Attack Scenarios
 
-A blocked model request is not equivalent to the model resisting prompt injection.
+New attack scenarios should clearly specify:
 
-Likewise, the absence of a detected disclosure does not prove that no information leakage occurred.
+1. the attack objective;
+2. the untrusted content presented to the agent;
+3. the expected unauthorized action;
+4. the permitted customer or resource scope;
+5. the permitted recipient scope where applicable; and
+6. the attack category.
 
-Please preserve these distinctions when adding metrics, defenses, or result reporting.
+An attack should test a meaningful security boundary rather than merely attempt to make the model produce unusual text.
 
-## Adding Attack Cases
+Where possible, the evaluator should be able to determine attack success from observable tool behavior.
 
-Attack contributions should represent a clear security objective rather than simply adding arbitrary prompt variations.
+### Attack Categories
 
-A new attack should define or make clear:
+New categories should represent a meaningful attack technique or security distinction.
 
-- the legitimate task;
-- the attacker-controlled content;
-- the attack objective;
-- the expected unauthorized action;
-- the permitted customer scope;
-- the permitted recipient scope; and
-- the attack category.
+Avoid creating categories solely for minor wording changes.
 
-Attack content must remain inside the project's synthetic sandbox.
+If a new category substantially changes the benchmark threat model, explain the change in the pull request and update the relevant documentation.
 
-Do not include real credentials, private customer information, production secrets, or instructions targeting real systems.
+### Authorization Policies
 
-### Attack Quality
+Defense contributions should clearly state:
 
-Useful attack cases should test a meaningful security boundary.
+- what security property the defense attempts to enforce;
+- where the defense is placed in the agent/tool architecture;
+- what information the defense trusts;
+- what operations it can block;
+- known limitations; and
+- whether it changes benchmark permissions or attack semantics.
 
-Examples include attempts to:
+A defense should not be described as preventing prompt injection merely because it blocks an unsafe tool call.
 
-- access an unauthorized customer record;
-- send information to an unauthorized recipient;
-- introduce additional tool actions;
-- impersonate trusted authority;
-- override workflow instructions; or
-- conceal malicious instructions through transformations or encoding.
+AgentSecBench distinguishes between:
 
-Avoid adding large numbers of nearly identical payloads solely to increase dataset size.
+- model influence;
+- unauthorized tool attempts;
+- unauthorized tool executions; and
+- observable synthetic-data disclosure.
 
-## Adding Attack Categories
+Preserve these distinctions when reporting defense results.
 
-New categories should have a security-relevant distinction from existing categories.
+## Security Evaluation Principles
 
-A proposal should explain:
+AgentSecBench evaluates security behavior at observable trust boundaries.
 
-- the attack mechanism;
-- how it differs from existing categories;
-- the security behavior being evaluated; and
-- the expected success condition.
+Contributions should preserve the following principles.
 
-For significant dataset changes, opening an issue before submitting a pull request is recommended.
+### Incomplete Trials Are Not Successful Defenses
 
-## Adding or Modifying Tools
+Timeouts, truncated generations, runtime failures, and other incomplete trials must remain explicitly classified.
 
-Tools represent privileged capabilities available to the agent.
+They must not silently count as successful defenses.
 
-New tools should:
+### Attempts and Executions Are Different
 
-- operate only on synthetic or controlled resources;
-- expose clear arguments;
-- produce auditable behavior;
-- fail safely on invalid inputs; and
-- include tests for expected and unexpected calls.
+If an agent proposes an unauthorized operation that the authorization layer blocks, record the attempted operation separately from execution.
 
-Tools must not silently bypass the authorization boundary.
+A blocked unsafe request demonstrates containment, not necessarily resistance to prompt injection.
 
-If a tool introduces a new privileged resource, the associated permission model should be defined explicitly.
+### Synthetic Data Only
 
-## Authorization and Defense Changes
+Do not contribute real credentials, personal information, production customer records, API keys, access tokens, or other sensitive data.
 
-Defense contributions should specify the security invariant they enforce.
+Benchmark environments and examples should use fictional or synthetic information.
 
-Examples include:
+### Preserve the Threat Model
 
-- resource-level authorization;
-- recipient restrictions;
-- capability-based controls;
-- privilege separation;
-- tool-call validation; and
-- independent action approval.
+Untrusted benchmark content must not silently become trusted authorization data.
 
-Security-sensitive code should fail closed where practical.
-
-Tests should cover both allowed and denied behavior.
-
-A defense should not be described as preventing prompt injection unless the evaluation actually establishes that property.
-
-AgentSecBench generally distinguishes **model behavior** from **execution containment**.
-
-## Evaluation Changes
-
-Changes to benchmark scoring or metrics require particular care.
-
-Evaluation code should:
-
-- distinguish attempts from executions;
-- distinguish completed from incomplete trials;
-- avoid treating failures or truncations as successful defenses;
-- preserve baseline/defended comparability;
-- expose assumptions in the metric definition; and
-- produce auditable structured output where practical.
-
-Changes that affect historical metric interpretation should be documented.
-
-## Completion Status
-
-Model-backed trials can terminate in different states, including:
-
-- `completed`
-- `truncated`
-- `timeout`
-- `error`
-
-Do not silently classify incomplete trials as secure outcomes.
-
-Completion-aware measurements should clearly identify the denominator being used.
-
-## Synthetic-Data Disclosure
-
-Disclosure detection operates on fictional benchmark records.
-
-Contributions to disclosure detection should document:
-
-- what information is detectable;
-- which transformations or encodings are supported;
-- known false-positive risks; and
-- known false-negative risks.
-
-Disclosure detection should not be presented as proof that all possible information leakage has been detected.
-
-## Testing
-
-Every behavior-changing contribution should include appropriate tests.
-
-Run:
-
-```bash
-python -m pytest -q
-```
-
-before submitting a pull request.
-
-Security-sensitive changes should include regression tests where practical.
-
-Examples include:
-
-- unauthorized operations remain blocked;
-- authorized operations continue to work;
-- malformed tool calls fail safely;
-- unknown tools cannot execute;
-- blocked operations do not appear as executed operations; and
-- evaluator changes classify known fixtures correctly.
-
-The normal test suite should not require running the full local LLM benchmark.
-
-## Benchmark Runs
-
-The full generated benchmark can be computationally expensive.
-
-Contributors are generally not expected to rerun the complete benchmark for small code or documentation changes.
-
-For development, a smaller run can be used:
-
-```bash
-agentsecbench run --limit 10 --timeout 180
-```
-
-If a change affects benchmark semantics, model execution, authorization behavior, attack definitions, or evaluation metrics, describe whether new benchmark results are required.
-
-Do not overwrite historical benchmark artifacts with results produced under materially different configurations.
+Changes that alter attacker capabilities, trusted inputs, or authorization assumptions should also update `docs/THREAT_MODEL.md`.
 
 ## Reproducibility
 
-Benchmark results should be accompanied by the relevant experiment metadata when appropriate.
+Changes affecting benchmark execution should preserve experiment provenance where applicable.
 
 AgentSecBench records information such as:
 
 - experiment configuration;
-- experiment ID;
-- model identity;
 - dataset hashes;
-- selected source-file hashes;
+- source-file hashes;
+- model configuration;
+- runtime/model identity;
 - Git revision;
-- execution settings; and
-- completion metadata.
+- trial completion status; and
+- checkpoint state.
 
-Avoid manually editing generated benchmark results.
+If a contribution changes execution behavior, consider whether the relevant file should also be included in experiment provenance.
 
-## Documentation
+Do not overwrite historical benchmark outputs to make new results appear directly comparable with previous experiments.
 
-Documentation changes should distinguish clearly between:
+When methodology changes materially, report the new experiment separately.
 
-- observed experimental results;
-- design assumptions;
-- interpretations;
-- limitations; and
-- proposed future work.
+## Testing
 
-Avoid claims of universal security effectiveness.
+Add or update tests when modifying security-sensitive behavior.
 
-For example, prefer:
+Tests are especially important for:
 
-> The authorization policy blocked all observed unauthorized tool executions in this experiment.
+- authorization decisions;
+- fail-closed behavior;
+- tool dispatch;
+- malformed tool calls;
+- evaluator logic;
+- attack-success classification;
+- disclosure detection;
+- validation;
+- reporting; and
+- CLI behavior.
 
-over:
+Security regression tests should verify observable behavior whenever possible.
 
-> The defense prevents prompt injection.
+For example, a test for a denied email operation should verify not only that the policy returned a denial, but also that the email operation did not execute.
+
+## Running Model-Based Experiments
+
+The full Ollama-powered benchmark is intentionally separate from the normal automated test suite.
+
+Contributors should not need to run the entire model benchmark for ordinary documentation, unit-test, or isolated code changes.
+
+When a change requires model-based evaluation, document:
+
+- the model used;
+- relevant runtime configuration;
+- benchmark configuration;
+- whether the run was complete or partial; and
+- any timeout, truncation, or execution failures.
+
+Do not present results from incomplete experiments as full benchmark results.
 
 ## Pull Requests
 
-Keep pull requests focused where practical.
+Keep pull requests focused on one logical change when practical.
 
 A pull request should explain:
 
 - what changed;
 - why the change is useful;
-- how it was tested;
-- whether benchmark semantics changed; and
-- whether existing result files remain comparable.
+- which security behavior is affected;
+- how the change was tested; and
+- whether benchmark comparability or methodology changed.
 
-Include screenshots or generated artifacts only when they materially help review the change.
+If results changed, include enough information to understand why.
 
-## Commit Messages
+Avoid committing:
 
-Use concise, descriptive commit messages.
-
-Examples:
-
-```text
-Add encoded disclosure regression tests
-Harden tool argument validation
-Add document-based injection scenarios
-Improve experiment manifest verification
-Document completion-aware ASR
-```
+- virtual environments;
+- Python cache files;
+- editor-specific temporary files;
+- credentials or secrets; and
+- unrelated generated artifacts.
 
 ## Reporting Security Issues
 
-If you discover a vulnerability in AgentSecBench itself that could create risk outside the synthetic benchmark environment, avoid publishing sensitive exploitation details in a public issue.
+If you discover a problem in AgentSecBench itself, provide enough information to reproduce the issue without including real credentials or sensitive third-party information.
 
-Use an appropriate private reporting channel provided by the repository when available.
+AgentSecBench is designed for controlled defensive security evaluation.
 
-Benchmark attack ideas involving only the synthetic AgentSecBench environment can generally be discussed through normal issues and pull requests.
+Do not use project contributions to target systems you do not own or have permission to test.
+
+## Documentation
+
+Update documentation when a contribution changes:
+
+- architecture;
+- threat assumptions;
+- benchmark methodology;
+- CLI behavior;
+- dataset structure;
+- security metrics; or
+- reproducibility behavior.
+
+The main technical references are:
+
+- `README.md`
+- `docs/ARCHITECTURE.md`
+- `docs/THREAT_MODEL.md`
+
+Documentation should distinguish measured benchmark observations from broader security claims.
+
+## Code Style
+
+Prefer code that is:
+
+- explicit;
+- testable;
+- deterministic where practical;
+- easy to audit; and
+- conservative around security boundaries.
+
+Security-sensitive behavior should fail closed when practical.
+
+Avoid hiding security decisions inside unnecessarily complex abstractions.
 
 ## Responsible Use
 
-AgentSecBench is intended for defensive security research and authorized evaluation.
+AgentSecBench is intended for defensive security research, education, and controlled evaluation.
 
-Contributions must not introduce real stolen data, credentials, malware, destructive payloads, or integrations designed to target systems without authorization.
+Only evaluate systems you own or have explicit authorization to test.
 
-Keep experiments inside environments you own or have explicit permission to test.
-
-## Questions and Proposals
-
-For substantial changes to the threat model, benchmark structure, attack taxonomy, or evaluation methodology, opening an issue before implementation is encouraged.
-
-This makes it easier to discuss the intended security property and preserve benchmark comparability.
+By contributing, you agree to keep contributions consistent with this defensive purpose.
