@@ -695,6 +695,10 @@ def main():
                 args.timeout,
                 worker_path
             )
+            # Attach experiment provenance to every result.
+            result["experiment_id"] = config_id
+            result["runner_version"] = RUNNER_VERSION
+            result["dataset_sha256"] = config["dataset_sha256"]
 
             # Replace previous incomplete trials
             # rather than creating duplicates.

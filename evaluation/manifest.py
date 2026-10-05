@@ -24,9 +24,10 @@ TRACKED_FILES = [
     "evaluation/exfiltration.py",
     "evaluation/report.py",
     "evaluation/validator.py",
+    "cli.py",
+    "pyproject.toml",
     "requirements.txt",
 ]
-
 
 def sha256_file(path):
     digest = hashlib.sha256()
