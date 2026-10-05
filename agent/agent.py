@@ -1,4 +1,3 @@
-
 from agent.tools import (
     read_ticket,
     search_customer,
@@ -10,19 +9,30 @@ from agent.policy import authorize_tool_call
 import ollama
 
 
+# ============================================================
 # Model configuration
+# ============================================================
+
 MODEL_NAME = "qwen3:4b-instruct"
 MAX_OUTPUT_TOKENS = 512
 MAX_AGENT_STEPS = 5
 
 
-# Tools that the agent is allowed to request
+# ============================================================
+# Tool registry
+# ============================================================
+
+# Tools that the model is allowed to request.
 AVAILABLE_TOOLS = {
     "read_ticket": read_ticket,
     "search_customer": search_customer,
     "send_email": send_email
 }
 
+
+# ============================================================
+# Helpers
+# ============================================================
 
 def _get_field(obj, key, default=None):
     """
@@ -34,6 +44,83 @@ def _get_field(obj, key, default=None):
     return getattr(obj, key, default)
 
 
+def _safe_execute_tool(tool_name, tool_arguments):
+    """
+    Safely execute a registered tool.
+
+    This validation is separate from authorization.
+
+    Even when authorization policy enforcement is disabled
+    for baseline experiments, the agent must not execute
+    nonexistent tools or crash because of malformed model
+    output.
+    """
+
+    # Reject tools that are not registered.
+    if tool_name not in AVAILABLE_TOOLS:
+
+        print(
+            f"[Agent] REJECTED unknown tool: "
+            f"{tool_name}"
+        )
+
+        return {
+            "status": "error",
+            "reason": "Unknown tool"
+        }
+
+    # Tool arguments must be represented as an object/dict.
+    if not isinstance(tool_arguments, dict):
+
+        print(
+            f"[Agent] REJECTED malformed arguments "
+            f"for {tool_name}"
+        )
+
+        return {
+            "status": "error",
+            "reason": "Tool arguments must be an object"
+        }
+
+    tool_function = AVAILABLE_TOOLS[tool_name]
+
+    try:
+        return tool_function(**tool_arguments)
+
+    except TypeError as exc:
+
+        # Usually indicates missing, unexpected, or otherwise
+        # invalid arguments supplied by the model.
+        print(
+            f"[Agent] Tool argument error for "
+            f"{tool_name}: {exc}"
+        )
+
+        return {
+            "status": "error",
+            "reason": "Invalid tool arguments"
+        }
+
+    except Exception as exc:
+
+        # Prevent a sandbox/tool failure from crashing the
+        # entire agent evaluation.
+        print(
+            f"[Agent] Tool execution failed for "
+            f"{tool_name}: "
+            f"{type(exc).__name__}"
+        )
+
+        return {
+            "status": "error",
+            "reason": "Tool execution failed"
+        }
+
+
+# ============================================================
+# Agent
+# ============================================================
+
 def run_agent(
     user_request,
     allowed_customer_ids=None,
@@ -41,14 +128,49 @@ def run_agent(
     enforce_policy=True,
     return_metadata=False
 ):
+    """
+    Run the AgentSecBench customer-support agent.
+
+    Parameters
+    ----------
+    user_request:
+        User request supplied to the model.
+
+    allowed_customer_ids:
+        Customer records the current task is authorized
+        to access.
+
+    allowed_recipients:
+        Email recipients the current task is authorized
+        to contact.
+
+    enforce_policy:
+        When True, authorization policy decisions are
+        enforced before tool execution.
+
+        When False, authorization checks are bypassed for
+        baseline experiments. Tool registration and runtime
+        safety checks still apply.
+
+    return_metadata:
+        When True, return both agent content and execution
+        metadata.
+    """
+
+    # --------------------------------------------------------
     # Default permissions
+    # --------------------------------------------------------
+
     if allowed_customer_ids is None:
         allowed_customer_ids = []
 
     if allowed_recipients is None:
         allowed_recipients = []
 
+    # --------------------------------------------------------
     # Model execution metadata
+    # --------------------------------------------------------
+
     metadata = {
         "model": MODEL_NAME,
         "max_output_tokens": MAX_OUTPUT_TOKENS,
@@ -61,6 +183,11 @@ def run_agent(
     }
 
     def finish(content, status):
+        """
+        Finalize the agent response while preserving optional
+        execution metadata.
+        """
+
         metadata["status"] = status
 
         if return_metadata:
@@ -71,7 +198,10 @@ def run_agent(
 
         return content
 
-    # Conversation sent to the model
+    # --------------------------------------------------------
+    # Initial conversation
+    # --------------------------------------------------------
+
     messages = [
         {
             "role": "system",
@@ -91,14 +221,17 @@ def run_agent(
         }
     ]
 
-    # Maximum of 5 agent steps
+    # --------------------------------------------------------
+    # Agent loop
+    # --------------------------------------------------------
+
     for step in range(MAX_AGENT_STEPS):
 
         print(
             f"\n[Agent] Starting step {step + 1}..."
         )
 
-        # Ask Ollama what to do next
+        # Ask Ollama what action to take.
         response = ollama.chat(
             model=MODEL_NAME,
             messages=messages,
@@ -119,25 +252,34 @@ def run_agent(
 
         metadata["steps_used"] = step + 1
 
-        # Read Ollama completion information
+        # ----------------------------------------------------
+        # Completion metadata
+        # ----------------------------------------------------
+
         done_reason = _get_field(
-            response, "done_reason"
-        )
-        eval_count = _get_field(
-            response, "eval_count"
-        )
-        prompt_eval_count = _get_field(
-            response, "prompt_eval_count"
+            response,
+            "done_reason"
         )
 
-        # Ollama may report "length" when the
-        # output limit is reached.
+        eval_count = _get_field(
+            response,
+            "eval_count"
+        )
+
+        prompt_eval_count = _get_field(
+            response,
+            "prompt_eval_count"
+        )
+
+        # Ollama may report "length" when the configured
+        # output-token limit is reached.
         length_limit_hit = (
             done_reason == "length"
         )
 
-        # Token count alone is not definitive,
-        # but it is worth investigating.
+        # Token count alone is not definitive evidence of
+        # truncation, but reaching the configured limit is
+        # worth recording.
         near_token_limit = (
             isinstance(eval_count, (int, float))
             and eval_count >= MAX_OUTPUT_TOKENS
@@ -158,16 +300,26 @@ def run_agent(
         if near_token_limit:
             metadata["truncation_suspected"] = True
 
-        # Add assistant response to history
-        message = _get_field(response, "message")
-        messages.append(message)
+        # ----------------------------------------------------
+        # Assistant response
+        # ----------------------------------------------------
 
-        # Check requested tools
-        tool_calls = _get_field(
-            message, "tool_calls"
+        message = _get_field(
+            response,
+            "message"
         )
 
-        # No tools requested
+        messages.append(message)
+
+        tool_calls = _get_field(
+            message,
+            "tool_calls"
+        )
+
+        # ----------------------------------------------------
+        # No tool requested — agent is finished
+        # ----------------------------------------------------
+
         if not tool_calls:
 
             print(
@@ -182,23 +334,33 @@ def run_agent(
             )
 
             return finish(
-                _get_field(message, "content", ""),
+                _get_field(
+                    message,
+                    "content",
+                    ""
+                ),
                 status
             )
 
-        # Process requested tool calls
+        # ----------------------------------------------------
+        # Process model-requested tools
+        # ----------------------------------------------------
+
         for tool_call in tool_calls:
 
             function = _get_field(
-                tool_call, "function"
+                tool_call,
+                "function"
             )
 
             tool_name = _get_field(
-                function, "name"
+                function,
+                "name"
             )
 
             tool_arguments = _get_field(
-                function, "arguments"
+                function,
+                "arguments"
             )
 
             print(
@@ -206,56 +368,115 @@ def run_agent(
                 f"{tool_name} {tool_arguments}"
             )
 
-            # SECURITY BOUNDARY:
-            # Authorize before execution.
-            if enforce_policy:
+            # ------------------------------------------------
+            # Structural validation
+            # ------------------------------------------------
+            #
+            # Authorization and tool validity are different
+            # concerns.
+            #
+            # Unknown tools must never execute, including in
+            # baseline mode where authorization enforcement is
+            # intentionally disabled.
 
-                allowed = authorize_tool_call(
-                    tool_name,
-                    tool_arguments,
-                    allowed_customer_ids,
-                    allowed_recipients
-                )
-
-            else:
-                allowed = True
-
-            # Reject unauthorized tool calls
-            if not allowed:
+            if tool_name not in AVAILABLE_TOOLS:
 
                 print(
-                    f"[Policy] BLOCKED unauthorized "
-                    f"tool call: "
-                    f"{tool_name} {tool_arguments}"
+                    f"[Agent] REJECTED unknown tool: "
+                    f"{tool_name}"
                 )
 
                 tool_result = {
-                    "status": "blocked",
-                    "reason": "Tool call not authorized"
+                    "status": "error",
+                    "reason": "Unknown tool"
                 }
 
-            # Execute authorized tools
+            elif not isinstance(tool_arguments, dict):
+
+                print(
+                    f"[Agent] REJECTED malformed arguments "
+                    f"for {tool_name}"
+                )
+
+                tool_result = {
+                    "status": "error",
+                    "reason": (
+                        "Tool arguments must be an object"
+                    )
+                }
+
             else:
 
-                tool_function = (
-                    AVAILABLE_TOOLS[tool_name]
-                )
+                # --------------------------------------------
+                # SECURITY BOUNDARY
+                # --------------------------------------------
+                #
+                # Authorization happens before execution.
 
-                tool_result = tool_function(
-                    **tool_arguments
-                )
+                if enforce_policy:
 
+                    allowed = authorize_tool_call(
+                        tool_name,
+                        tool_arguments,
+                        allowed_customer_ids,
+                        allowed_recipients
+                    )
+
+                else:
+
+                    # Baseline benchmark mode intentionally
+                    # bypasses authorization policy.
+                    allowed = True
+
+                # --------------------------------------------
+                # Reject unauthorized calls
+                # --------------------------------------------
+
+                if not allowed:
+
+                    print(
+                        f"[Policy] BLOCKED unauthorized "
+                        f"tool call: "
+                        f"{tool_name} {tool_arguments}"
+                    )
+
+                    tool_result = {
+                        "status": "blocked",
+                        "reason": (
+                            "Tool call not authorized"
+                        )
+                    }
+
+                # --------------------------------------------
+                # Execute authorized call
+                # --------------------------------------------
+
+                else:
+
+                    tool_result = _safe_execute_tool(
+                        tool_name,
+                        tool_arguments
+                    )
+
+            # ------------------------------------------------
             # Return tool result to model
+            # ------------------------------------------------
+
             messages.append({
                 "role": "tool",
                 "tool_name": tool_name,
                 "content": str(tool_result)
             })
 
-    # Maximum agent steps reached
+    # --------------------------------------------------------
+    # Maximum steps reached
+    # --------------------------------------------------------
+
     return finish(
-        "Agent stopped after reaching the "
-        "maximum number of tool steps.",
+        (
+            "Agent stopped after reaching the "
+            "maximum number of tool steps."
+        ),
         (
             "truncated"
             if metadata["truncated"]
