@@ -53,3 +53,17 @@ desktop.ini
 
 # Jupyter notebook checkpoints
 .ipynb_checkpoints/
+
+# Local benchmark artifacts
+results/archive/
+results/baseline_*.json
+results/defended_*.json
+results/baseline_results.json
+results/experiment_manifest.json
+
+results/generated_attack_*.json
+results/generated_attack_*.csv
+results/generated_attack_*.png
+results/generated_checkpoint_*.json
+results/generated_config_*.json
+results/generated_manifest_*.json
