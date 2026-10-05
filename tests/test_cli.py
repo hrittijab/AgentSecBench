@@ -1,7 +1,7 @@
 
 import subprocess
 import sys
-
+from cli import COMMAND_MODULES
 import pytest
 
 
@@ -38,3 +38,8 @@ def test_cli_main_help():
     assert result.returncode == 0
     for command in ("run", "validate", "report", "manifest"):
         assert command in result.stdout
+def test_visualize_command_is_registered():
+    assert (
+        COMMAND_MODULES["visualize"]
+        == "evaluation.visualize"
+    )

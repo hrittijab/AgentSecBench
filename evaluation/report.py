@@ -1,5 +1,5 @@
-
 import argparse
+import csv
 import json
 from collections import Counter, defaultdict
 from datetime import datetime
@@ -14,6 +14,7 @@ RESULTS_DIR = ROOT / "results"
 ATTACKS_PATH = ROOT / "attacks" / "generated_attacks.json"
 CUSTOMERS_PATH = ROOT / "sandbox" / "customers.json"
 
+
 SECURITY_FIELDS = (
     "unauthorized_lookup_attempts",
     "unauthorized_lookup_executions",
@@ -23,6 +24,10 @@ SECURITY_FIELDS = (
     "blocked_email_calls",
 )
 
+
+# ============================================================
+# Loading
+# ============================================================
 
 def load_json(path):
     with Path(path).open(encoding="utf-8") as f:
@@ -43,10 +48,14 @@ def build_permissions(attacks):
     }
 
 
+# ============================================================
+# Validation
+# ============================================================
+
 def validate_trials(trials, permissions):
     """
-    Never silently analyze a trial using
-    missing or incorrect permissions.
+    Never silently analyze a trial using missing or
+    incorrect permissions.
     """
     seen = set()
 
@@ -72,6 +81,10 @@ def validate_trials(trials, permissions):
             )
 
 
+# ============================================================
+# Security summary
+# ============================================================
+
 def summarize(trials, permissions, customers):
     total = len(trials)
 
@@ -81,17 +94,20 @@ def summarize(trials, permissions, customers):
     )
 
     completed = [
-        trial for trial in trials
+        trial
+        for trial in trials
         if trial.get("valid_trial") is True
     ]
 
     legacy = [
-        trial for trial in trials
+        trial
+        for trial in trials
         if "valid_trial" not in trial
     ]
 
     security = Counter({
-        field: 0 for field in SECURITY_FIELDS
+        field: 0
+        for field in SECURITY_FIELDS
     })
 
     disclosure_trials = 0
@@ -147,55 +163,77 @@ def summarize(trials, permissions, customers):
         "statuses": dict(statuses),
         "completed": len(completed),
         "legacy_unverified": len(legacy),
+
         "observed_attack_successes": (
             observed_successes
         ),
+
         "observed_attack_success_rate": (
             round(
-                observed_successes / total, 4
+                observed_successes / total,
+                4
             )
-            if total else None
+            if total
+            else None
         ),
+
         "completed_attack_successes": (
             completed_successes
         ),
+
         "completed_attack_success_rate": (
             round(
                 completed_successes /
-                len(completed), 4
+                len(completed),
+                4
             )
-            if completed else None
+            if completed
+            else None
         ),
+
         "errors": sum(
             trial.get("error") is not None
             for trial in trials
         ),
+
         "truncated": statuses.get(
-            "truncated", 0
+            "truncated",
+            0
         ),
+
         "timeouts": statuses.get(
-            "timeout", 0
+            "timeout",
+            0
         ),
+
         "security": {
             field: security[field]
             for field in SECURITY_FIELDS
         },
+
         "disclosure": {
             "trials_with_matched_disclosure": (
                 disclosure_trials
             ),
+
             "matched_customer_recipient_pairs": (
                 disclosure_findings
             ),
+
             "customer_counts": dict(
                 disclosed_customers
             ),
+
             "recipient_counts": dict(
                 disclosure_recipients
             ),
         },
     }
 
+
+# ============================================================
+# Report generation
+# ============================================================
 
 def generate_report(
     trials,
@@ -209,42 +247,51 @@ def generate_report(
     )
 
     modes = defaultdict(list)
+
     categories = defaultdict(
         lambda: defaultdict(list)
     )
 
     for trial in trials:
         mode = trial["mode"]
+
         category = trial.get(
-            "category", "unknown"
+            "category",
+            "unknown"
         )
 
         modes[mode].append(trial)
-        categories[category][mode].append(
-            trial
-        )
+
+        categories[
+            category
+        ][mode].append(trial)
 
     return {
         "generated_at": (
             datetime.now().isoformat()
         ),
+
         "source": str(source),
+
         "methodology": {
             "observed_attack_success": (
                 "Original attack-specific "
                 "tool-execution objective, "
                 "measured across all trials."
             ),
+
             "completed_attack_success": (
                 "Attack-specific success "
                 "among verified completed "
                 "trials only."
             ),
+
             "legacy_results": (
                 "Trials without completion "
                 "metadata are not assumed "
                 "to have completed."
             ),
+
             "security_events": (
                 "Permission-aware counts "
                 "of attempted, executed, "
@@ -252,6 +299,7 @@ def generate_report(
                 "These counts include "
                 "incomplete trials."
             ),
+
             "disclosure_detection": (
                 "Value matching against "
                 "synthetic customer fields "
@@ -264,14 +312,17 @@ def generate_report(
                 "were detected."
             ),
         },
+
         "overall": {
             mode: summarize(
                 items,
                 permissions,
                 customers
             )
-            for mode, items in modes.items()
+            for mode, items
+            in modes.items()
         },
+
         "categories": {
             category: {
                 mode: summarize(
@@ -288,28 +339,257 @@ def generate_report(
     }
 
 
+# ============================================================
+# CSV exports
+# ============================================================
+
+def export_overall_csv(report, path):
+    """
+    Export one row per benchmark mode.
+
+    Rates are stored as decimal fractions so downstream
+    tools can format them as percentages without parsing
+    presentation strings.
+    """
+    path = Path(path)
+
+    fieldnames = [
+        "mode",
+        "trials",
+        "completed",
+        "legacy_unverified",
+        "observed_attack_successes",
+        "observed_attack_success_rate",
+        "completed_attack_successes",
+        "completed_attack_success_rate",
+        "errors",
+        "truncated",
+        "timeouts",
+        *SECURITY_FIELDS,
+        "trials_with_matched_disclosure",
+        "matched_customer_recipient_pairs",
+    ]
+
+    rows = []
+
+    for mode, metrics in report["overall"].items():
+        row = {
+            "mode": mode,
+
+            "trials": metrics["trials"],
+
+            "completed": metrics[
+                "completed"
+            ],
+
+            "legacy_unverified": metrics[
+                "legacy_unverified"
+            ],
+
+            "observed_attack_successes": metrics[
+                "observed_attack_successes"
+            ],
+
+            "observed_attack_success_rate": metrics[
+                "observed_attack_success_rate"
+            ],
+
+            "completed_attack_successes": metrics[
+                "completed_attack_successes"
+            ],
+
+            "completed_attack_success_rate": metrics[
+                "completed_attack_success_rate"
+            ],
+
+            "errors": metrics["errors"],
+
+            "truncated": metrics[
+                "truncated"
+            ],
+
+            "timeouts": metrics[
+                "timeouts"
+            ],
+
+            "trials_with_matched_disclosure": (
+                metrics["disclosure"][
+                    "trials_with_matched_disclosure"
+                ]
+            ),
+
+            "matched_customer_recipient_pairs": (
+                metrics["disclosure"][
+                    "matched_customer_recipient_pairs"
+                ]
+            ),
+        }
+
+        for field in SECURITY_FIELDS:
+            row[field] = (
+                metrics["security"][field]
+            )
+
+        rows.append(row)
+
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    with path.open(
+        "w",
+        encoding="utf-8",
+        newline=""
+    ) as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=fieldnames
+        )
+
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def export_categories_csv(report, path):
+    """
+    Export category-level benchmark metrics.
+    """
+    path = Path(path)
+
+    fieldnames = [
+        "category",
+        "mode",
+        "trials",
+        "completed",
+        "observed_attack_successes",
+        "observed_attack_success_rate",
+        "completed_attack_successes",
+        "completed_attack_success_rate",
+        "truncated",
+        "timeouts",
+        *SECURITY_FIELDS,
+        "trials_with_matched_disclosure",
+        "matched_customer_recipient_pairs",
+    ]
+
+    rows = []
+
+    for category, modes in (
+        report["categories"].items()
+    ):
+        for mode, metrics in modes.items():
+            row = {
+                "category": category,
+
+                "mode": mode,
+
+                "trials": metrics[
+                    "trials"
+                ],
+
+                "completed": metrics[
+                    "completed"
+                ],
+
+                "observed_attack_successes": metrics[
+                    "observed_attack_successes"
+                ],
+
+                "observed_attack_success_rate": metrics[
+                    "observed_attack_success_rate"
+                ],
+
+                "completed_attack_successes": metrics[
+                    "completed_attack_successes"
+                ],
+
+                "completed_attack_success_rate": metrics[
+                    "completed_attack_success_rate"
+                ],
+
+                "truncated": metrics[
+                    "truncated"
+                ],
+
+                "timeouts": metrics[
+                    "timeouts"
+                ],
+
+                "trials_with_matched_disclosure": (
+                    metrics["disclosure"][
+                        "trials_with_matched_disclosure"
+                    ]
+                ),
+
+                "matched_customer_recipient_pairs": (
+                    metrics["disclosure"][
+                        "matched_customer_recipient_pairs"
+                    ]
+                ),
+            }
+
+            for field in SECURITY_FIELDS:
+                row[field] = (
+                    metrics["security"][field]
+                )
+
+            rows.append(row)
+
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    with path.open(
+        "w",
+        encoding="utf-8",
+        newline=""
+    ) as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=fieldnames
+        )
+
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+# ============================================================
+# Console output
+# ============================================================
+
 def print_report(report):
-    print("\nAGENTSECBENCH SECURITY REPORT")
+    print(
+        "\nAGENTSECBENCH SECURITY REPORT"
+    )
+
     print("=" * 60)
 
     for mode, metrics in (
         report["overall"].items()
     ):
-        print(f"\n{mode.upper()}")
+        print(
+            f"\n{mode.upper()}"
+        )
+
         print("-" * 40)
 
         print(
             "Trials:",
             metrics["trials"]
         )
+
         print(
             "Completed:",
             metrics["completed"]
         )
+
         print(
             "Legacy unverified:",
             metrics["legacy_unverified"]
         )
+
         print(
             "Statuses:",
             metrics["statuses"]
@@ -322,6 +602,16 @@ def print_report(report):
             ]
         )
 
+        observed_rate = metrics[
+            "observed_attack_success_rate"
+        ]
+
+        if observed_rate is not None:
+            print(
+                "Observed attack success rate:",
+                f"{observed_rate * 100:.1f}%"
+            )
+
         print(
             "Completed attack successes:",
             metrics[
@@ -329,7 +619,19 @@ def print_report(report):
             ]
         )
 
-        print("\nAuthorization security:")
+        completed_rate = metrics[
+            "completed_attack_success_rate"
+        ]
+
+        if completed_rate is not None:
+            print(
+                "Completed attack success rate:",
+                f"{completed_rate * 100:.1f}%"
+            )
+
+        print(
+            "\nAuthorization security:"
+        )
 
         for field, count in (
             metrics["security"].items()
@@ -338,9 +640,13 @@ def print_report(report):
                 f"  {field}: {count}"
             )
 
-        print("\nSynthetic-data disclosure:")
+        print(
+            "\nSynthetic-data disclosure:"
+        )
 
-        disclosure = metrics["disclosure"]
+        disclosure = metrics[
+            "disclosure"
+        ]
 
         print(
             "  Trials with matched disclosure:",
@@ -348,6 +654,7 @@ def print_report(report):
                 "trials_with_matched_disclosure"
             ]
         )
+
         print(
             "  Matched customer-recipient pairs:",
             disclosure[
@@ -355,24 +662,58 @@ def print_report(report):
             ]
         )
 
-    print("\nCATEGORY BREAKDOWN")
+    print(
+        "\nCATEGORY BREAKDOWN"
+    )
+
     print("-" * 60)
 
     for category, modes in (
         report["categories"].items()
     ):
-        print(f"\n{category}")
+        print(
+            f"\n{category}"
+        )
 
         for mode, metrics in modes.items():
+            observed_rate = metrics[
+                "observed_attack_success_rate"
+            ]
+
+            completed_rate = metrics[
+                "completed_attack_success_rate"
+            ]
+
+            observed_display = (
+                f"{observed_rate * 100:.1f}%"
+                if observed_rate is not None
+                else "N/A"
+            )
+
+            completed_display = (
+                f"{completed_rate * 100:.1f}%"
+                if completed_rate is not None
+                else "N/A"
+            )
+
             print(
                 f"  {mode}: "
                 f"{metrics['observed_attack_successes']}"
                 f"/{metrics['trials']} "
-                "observed successes; "
-                f"{metrics['disclosure']['trials_with_matched_disclosure']}"
-                " disclosure trials"
+                f"observed successes "
+                f"({observed_display}); "
+                f"{metrics['completed_attack_successes']}"
+                f"/{metrics['completed']} "
+                f"completed successes "
+                f"({completed_display}); "
+                f"{metrics['disclosure']['trials_with_matched_disclosure']} "
+                "disclosure trials"
             )
 
+
+# ============================================================
+# CLI
+# ============================================================
 
 def main():
     parser = argparse.ArgumentParser()
@@ -389,33 +730,56 @@ def main():
 
     parser.add_argument(
         "--attacks",
-        default=str(ATTACKS_PATH)
+        default=str(
+            ATTACKS_PATH
+        )
     )
 
     parser.add_argument(
         "--customers",
-        default=str(CUSTOMERS_PATH)
+        default=str(
+            CUSTOMERS_PATH
+        )
     )
 
     args = parser.parse_args()
 
-    source = Path(args.input)
+    source = Path(
+        args.input
+    )
 
-    trials = load_json(source)
-    attacks = load_json(args.attacks)
-    customers = load_json(args.customers)
+    trials = load_json(
+        source
+    )
 
-    if not isinstance(trials, list):
+    attacks = load_json(
+        args.attacks
+    )
+
+    customers = load_json(
+        args.customers
+    )
+
+    if not isinstance(
+        trials,
+        list
+    ):
         raise ValueError(
             "Expected trial results as a list"
         )
 
-    if not isinstance(attacks, list):
+    if not isinstance(
+        attacks,
+        list
+    ):
         raise ValueError(
             "Expected attack dataset as a list"
         )
 
-    if not isinstance(customers, dict):
+    if not isinstance(
+        customers,
+        dict
+    ):
         raise ValueError(
             "Expected customers as a dictionary"
         )
@@ -435,7 +799,8 @@ def main():
         Path(args.output)
         if args.output
         else RESULTS_DIR / (
-            source.stem + "_report.json"
+            source.stem +
+            "_report.json"
         )
     )
 
@@ -445,7 +810,8 @@ def main():
     )
 
     with output.open(
-        "w", encoding="utf-8"
+        "w",
+        encoding="utf-8"
     ) as f:
         json.dump(
             report,
@@ -453,11 +819,55 @@ def main():
             indent=2
         )
 
-    print_report(report)
+    # --------------------------------------------------------
+    # Export machine-readable tables
+    # --------------------------------------------------------
+
+    overall_csv = output.with_name(
+        source.stem +
+        "_summary.csv"
+    )
+
+    categories_csv = output.with_name(
+        source.stem +
+        "_categories.csv"
+    )
+
+    export_overall_csv(
+        report,
+        overall_csv
+    )
+
+    export_categories_csv(
+        report,
+        categories_csv
+    )
+
+    # --------------------------------------------------------
+    # Console report
+    # --------------------------------------------------------
+
+    print_report(
+        report
+    )
 
     print(
-        "\nSaved:",
+        "\nSaved report artifacts:"
+    )
+
+    print(
+        "  JSON:",
         output
+    )
+
+    print(
+        "  Summary CSV:",
+        overall_csv
+    )
+
+    print(
+        "  Categories CSV:",
+        categories_csv
     )
 
 

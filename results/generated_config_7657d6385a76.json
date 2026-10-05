@@ -1,0 +1,18 @@
+{
+  "experiment_id": "7657d6385a76",
+  "runner_version": 2,
+  "dataset_sha256": "b0a35ce79673b557d7c95f11805bcef74bff26968f9ccf3b756be9a6f017d55a",
+  "source_hashes": {
+    "agent/agent.py": "64d741957b55e999bdcde4ae24fc456af39de2836d7b2e7e4d5dbde894b6e7af",
+    "agent/policy.py": "f0fe6bd5025c62f09e5af20f1add81962b0ceeac239654b18fd20c14bc18e837",
+    "agent/tools.py": "28cd702b7f2096a5e4a375498cdaa24f77d52b8416e8fdb4a9263f0b8aaa642a",
+    "attacks/injector.py": "be4919f75a12cb2b883246b92819d198d45e3e4a7046aad63df53ecff067d240",
+    "evaluation/generated_runner.py": "6a0a70596f76a43adcf43268130329a378fdd8feca67f9965f8ab4e9175e5028",
+    "evaluation/generated_worker.py": "290d08762066a3fc142e0fbfd12e15cca5fa24f62a8341830f22fae1b1cb8365"
+  },
+  "model": "qwen3:4b-instruct",
+  "max_output_tokens": 512,
+  "max_agent_steps": 5,
+  "timeout_seconds": 120,
+  "python_version": "3.13.5"
+}
