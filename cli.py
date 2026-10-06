@@ -7,11 +7,20 @@ import sys
 
 COMMAND_MODULES = {
     "run": "evaluation.generated_runner",
+    "benign": "evaluation.benign_runner",
     "validate": "evaluation.validator",
     "report": "evaluation.report",
     "visualize": "evaluation.visualize",
     "manifest": "evaluation.manifest",
 }
+
+
+DEFENSE_CHOICES = [
+    "baseline",
+    "prompt_guard",
+    "authorization",
+    "layered",
+]
 
 
 def main():
@@ -29,7 +38,7 @@ def main():
     )
 
     # --------------------------------------------------------
-    # Run
+    # Run attack benchmark
     # --------------------------------------------------------
 
     run_parser = subparsers.add_parser(
@@ -51,6 +60,48 @@ def main():
         help=(
             "Maximum execution time in seconds "
             "for each trial."
+        ),
+    )
+
+    run_parser.add_argument(
+        "--defenses",
+        nargs="+",
+        choices=DEFENSE_CHOICES,
+        help=(
+            "Defense strategies to evaluate. "
+            "If omitted, the runner evaluates all "
+            "registered default defenses."
+        ),
+    )
+
+    # --------------------------------------------------------
+    # Benign utility benchmark
+    # --------------------------------------------------------
+
+    benign_parser = subparsers.add_parser(
+        "benign",
+        help=(
+            "Run benign utility experiments across "
+            "defense strategies."
+        ),
+    )
+
+    benign_parser.add_argument(
+        "--defenses",
+        nargs="+",
+        choices=DEFENSE_CHOICES,
+        help=(
+            "Defense strategies to evaluate. "
+            "If omitted, all default defenses "
+            "are evaluated."
+        ),
+    )
+
+    benign_parser.add_argument(
+        "--output",
+        help=(
+            "Optional path for the benign benchmark "
+            "JSON artifact."
         ),
     )
 
@@ -140,6 +191,10 @@ def main():
 
     command_args = []
 
+    # --------------------------------------------------------
+    # Attack benchmark arguments
+    # --------------------------------------------------------
+
     if args.command == "run":
         if args.limit is not None:
             command_args.extend(
@@ -157,6 +212,41 @@ def main():
                 ]
             )
 
+        if args.defenses:
+            command_args.append(
+                "--defenses"
+            )
+
+            command_args.extend(
+                args.defenses
+            )
+
+    # --------------------------------------------------------
+    # Benign benchmark arguments
+    # --------------------------------------------------------
+
+    elif args.command == "benign":
+        if args.defenses:
+            command_args.append(
+                "--defenses"
+            )
+
+            command_args.extend(
+                args.defenses
+            )
+
+        if args.output:
+            command_args.extend(
+                [
+                    "--output",
+                    args.output,
+                ]
+            )
+
+    # --------------------------------------------------------
+    # Validator arguments
+    # --------------------------------------------------------
+
     elif args.command == "validate":
         command_args.extend(
             [
@@ -170,6 +260,10 @@ def main():
                 "--allow-partial"
             )
 
+    # --------------------------------------------------------
+    # Report arguments
+    # --------------------------------------------------------
+
     elif args.command == "report":
         command_args.extend(
             [
@@ -178,6 +272,10 @@ def main():
             ]
         )
 
+    # --------------------------------------------------------
+    # Visualization arguments
+    # --------------------------------------------------------
+
     elif args.command == "visualize":
         command_args.extend(
             [
@@ -185,6 +283,10 @@ def main():
                 args.input,
             ]
         )
+
+    # --------------------------------------------------------
+    # Manifest arguments
+    # --------------------------------------------------------
 
     elif args.command == "manifest":
         if args.verify:
@@ -202,7 +304,9 @@ def main():
     command = [
         sys.executable,
         "-m",
-        COMMAND_MODULES[args.command],
+        COMMAND_MODULES[
+            args.command
+        ],
         *command_args,
     ]
 

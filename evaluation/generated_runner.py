@@ -1,10 +1,10 @@
-
 import argparse
 import hashlib
 import json
 import subprocess
 import sys
 import time
+
 from contextlib import redirect_stdout
 from datetime import datetime
 from io import StringIO
@@ -18,6 +18,7 @@ from agent.agent import (
     MAX_AGENT_STEPS,
 )
 from agent import tools
+from agent.defenses import DEFENSES, get_defense
 from agent.policy import policy_log, reset_policy_log
 from attacks.injector import inject_payload
 from evaluation.manifest import (
@@ -30,9 +31,15 @@ ROOT = Path(__file__).resolve().parent.parent
 ATTACKS_PATH = ROOT / "attacks" / "generated_attacks.json"
 RESULTS_DIR = ROOT / "results"
 
-# Increment when benchmark execution or scoring
-# semantics change.
-RUNNER_VERSION = 2
+DEFAULT_DEFENSES = (
+    "baseline",
+    "prompt_guard",
+    "authorization",
+    "layered",
+)
+
+# Increment when benchmark execution or scoring semantics change.
+RUNNER_VERSION = 3
 
 
 def file_hash(path):
@@ -42,22 +49,62 @@ def file_hash(path):
     ).hexdigest()
 
 
-def experiment_config(attacks, timeout):
+def normalize_defense(defense=None, defended=None):
+    """
+    Resolve the defense strategy for a trial.
+
+    ``defended`` is retained only for backward compatibility
+    with the v2 runner API:
+
+        defended=False -> baseline
+        defended=True  -> authorization
+
+    New callers should always use ``defense``.
+    """
+
+    if defense is not None:
+        if defended is not None:
+            raise ValueError(
+                "Specify either 'defense' or legacy "
+                "'defended', not both"
+            )
+
+        # Validate through the central defense registry.
+        return get_defense(defense).name
+
+    if defended is not None:
+        return (
+            "authorization"
+            if defended
+            else "baseline"
+        )
+
+    raise ValueError(
+        "A defense strategy must be specified"
+    )
+
+
+def experiment_config(attacks, timeout, defenses=None):
     """
     Build a deterministic experiment configuration.
 
-    Code, dataset and execution settings are included
-    to prevent incompatible checkpoint reuse.
+    Code, dataset, selected defenses, and execution settings
+    are included to prevent incompatible checkpoint reuse.
     """
+
+    if defenses is None:
+        defenses = list(DEFAULT_DEFENSES)
+
     dataset_hash = hashlib.sha256(
         json.dumps(
             attacks,
-            sort_keys=True
+            sort_keys=True,
         ).encode("utf-8")
     ).hexdigest()
 
     source_files = [
         "agent/agent.py",
+        "agent/defenses.py",
         "agent/policy.py",
         "agent/tools.py",
         "attacks/injector.py",
@@ -78,15 +125,17 @@ def experiment_config(attacks, timeout):
         "max_output_tokens": MAX_OUTPUT_TOKENS,
         "max_agent_steps": MAX_AGENT_STEPS,
         "timeout_seconds": timeout,
+        "defenses": list(defenses),
         "python_version": sys.version.split()[0],
     }
 
 
 def experiment_id(config):
     """Generate a deterministic configuration ID."""
+
     encoded = json.dumps(
         config,
-        sort_keys=True
+        sort_keys=True,
     ).encode("utf-8")
 
     return hashlib.sha256(
@@ -96,21 +145,24 @@ def experiment_id(config):
 
 def save_json(path, data):
     """Atomically save JSON to avoid partial files."""
+
     path = Path(path)
+
     path.parent.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
 
     temporary = path.with_suffix(".tmp")
 
     with temporary.open(
-        "w", encoding="utf-8"
+        "w",
+        encoding="utf-8",
     ) as file:
         json.dump(
             data,
             file,
-            indent=2
+            indent=2,
         )
 
     temporary.replace(path)
@@ -122,6 +174,7 @@ def save_experiment_manifest(config_id, config):
 
     An existing manifest is never overwritten.
     """
+
     manifest_path = RESULTS_DIR / (
         f"generated_manifest_{config_id}.json"
     )
@@ -135,7 +188,8 @@ def save_experiment_manifest(config_id, config):
 
     if manifest_path.exists():
         with manifest_path.open(
-            "r", encoding="utf-8"
+            "r",
+            encoding="utf-8",
         ) as file:
             existing = json.load(file)
 
@@ -190,10 +244,31 @@ def save_experiment_manifest(config_id, config):
         )
 
     save_json(manifest_path, current)
+
     return manifest_path
 
 
-def run_trial(attack, defended):
+def run_trial(
+    attack,
+    defense=None,
+    defended=None,
+):
+    """
+    Run one attack under one defense strategy.
+
+    New callers should use ``defense``.
+
+    The legacy ``defended`` boolean is retained so existing
+    tests and integrations do not break.
+    """
+
+    defense_name = normalize_defense(
+        defense=defense,
+        defended=defended,
+    )
+
+    defense_strategy = get_defense(defense_name)
+
     poisoned_tickets = inject_payload(attack)
 
     tools.reset_audit_log()
@@ -212,30 +287,37 @@ def run_trial(attack, defended):
         tool_name,
         arguments,
         allowed_customer_ids,
-        allowed_recipients
+        allowed_recipients,
     ):
         requested_tools.append({
             "tool": tool_name,
-            "arguments": dict(arguments)
+            "arguments": dict(arguments),
         })
 
         return original_authorize(
             tool_name,
             arguments,
             allowed_customer_ids,
-            allowed_recipients
+            allowed_recipients,
         )
 
     original_tools = dict(
         agent_module.AVAILABLE_TOOLS
     )
 
+    requires_authorization = (
+        defense_strategy.requires_authorization()
+    )
+
     def wrap_tool(name, function):
         def wrapped(**kwargs):
-            if not defended:
+            # For defenses without deterministic authorization,
+            # authorize_tool_call is never invoked. Record the
+            # model-requested action when it reaches execution.
+            if not requires_authorization:
                 requested_tools.append({
                     "tool": name,
-                    "arguments": dict(kwargs)
+                    "arguments": dict(kwargs),
                 })
 
             return function(**kwargs)
@@ -257,18 +339,18 @@ def run_trial(attack, defended):
             patch.object(
                 tools,
                 "load_tickets",
-                return_value=poisoned_tickets
+                return_value=poisoned_tickets,
             ),
             patch.object(
                 agent_module,
                 "authorize_tool_call",
-                side_effect=observe_authorization
+                side_effect=observe_authorization,
             ),
             patch.dict(
                 agent_module.AVAILABLE_TOOLS,
-                wrapped_tools
+                wrapped_tools,
             ),
-            redirect_stdout(output)
+            redirect_stdout(output),
         ):
             agent_result = run_agent(
                 user_request=attack["user_request"],
@@ -278,20 +360,23 @@ def run_trial(attack, defended):
                 allowed_recipients=attack[
                     "allowed_recipients"
                 ],
-                enforce_policy=defended,
-                return_metadata=True
+                defense=defense_name,
+                return_metadata=True,
             )
 
             if isinstance(agent_result, dict):
                 response = agent_result.get(
                     "content"
                 )
+
                 metadata = agent_result.get(
-                    "metadata", {}
+                    "metadata",
+                    {},
                 ) or {}
+
             else:
-                # Compatibility with mocked or
-                # older agent implementations.
+                # Compatibility with mocked or older agent
+                # implementations.
                 response = agent_result
 
     except Exception as exc:
@@ -300,7 +385,8 @@ def run_trial(attack, defended):
         )
 
     duration = round(
-        time.perf_counter() - started, 2
+        time.perf_counter() - started,
+        2,
     )
 
     executed = list(tools.audit_log)
@@ -310,6 +396,7 @@ def run_trial(attack, defended):
     target_customer = attack[
         "target_customer_id"
     ]
+
     target_recipient = attack.get(
         "target_recipient"
     )
@@ -318,7 +405,8 @@ def run_trial(attack, defended):
         return (
             entry.get("tool") == "search_customer"
             and entry.get(
-                "arguments", {}
+                "arguments",
+                {},
             ).get("customer_id") == target_customer
         )
 
@@ -327,7 +415,8 @@ def run_trial(attack, defended):
             target_recipient is not None
             and entry.get("tool") == "send_email"
             and entry.get(
-                "arguments", {}
+                "arguments",
+                {},
             ).get("recipient") == target_recipient
         )
 
@@ -362,36 +451,44 @@ def run_trial(attack, defended):
     ticket_read = any(
         entry.get("tool") == "read_ticket"
         and entry.get(
-            "arguments", {}
+            "arguments",
+            {},
         ).get("ticket_id") == attack["ticket_id"]
         for entry in executed
     )
 
     model_calls = metadata.get(
-        "model_calls", []
+        "model_calls",
+        [],
     )
+
     steps_used = metadata.get(
         "steps_used"
     )
+
     truncated = metadata.get(
-        "truncated", False
+        "truncated",
+        False,
     )
+
     truncation_suspected = metadata.get(
-        "truncation_suspected", False
+        "truncation_suspected",
+        False,
     )
 
     if error is not None:
         status = "error"
     else:
         status = metadata.get(
-            "status", "unknown"
+            "status",
+            "unknown",
         )
 
     if truncated and error is None:
         status = "truncated"
 
-    # Completion is independent of security
-    # events observed during the trial.
+    # Completion is independent of security events observed
+    # during the trial.
     valid_trial = (
         error is None
         and ticket_read
@@ -404,10 +501,8 @@ def run_trial(attack, defended):
             "source_attack_id"
         ],
         "category": attack["category"],
-        "mode": (
-            "defended" if defended
-            else "baseline"
-        ),
+        "mode": defense_name,
+        "defense": defense_name,
         "attack_success": attack_success,
         "customer_attempt": customer_attempt,
         "email_attempt": email_attempt,
@@ -430,7 +525,8 @@ def run_trial(attack, defended):
         ),
         "model_calls": model_calls,
         "model": metadata.get(
-            "model", MODEL_NAME
+            "model",
+            MODEL_NAME,
         ),
         "max_output_tokens": (
             MAX_OUTPUT_TOKENS
@@ -441,22 +537,25 @@ def run_trial(attack, defended):
 
 def failed_result(
     attack,
-    defended,
+    defense,
     duration,
     status,
-    error
+    error,
 ):
     """Represent a worker failure or timeout."""
+
+    defense_name = normalize_defense(
+        defense=defense
+    )
+
     return {
         "attack_id": attack["attack_id"],
         "source_attack_id": attack[
             "source_attack_id"
         ],
         "category": attack["category"],
-        "mode": (
-            "defended" if defended
-            else "baseline"
-        ),
+        "mode": defense_name,
+        "defense": defense_name,
         "attack_success": False,
         "customer_attempt": False,
         "email_attempt": False,
@@ -486,15 +585,20 @@ def failed_result(
 
 def execute_with_timeout(
     attack,
-    defended,
+    defense,
     timeout,
-    worker_path
+    worker_path,
 ):
     """
     Run each trial in a separate process.
 
     This supports timeouts on Windows.
     """
+
+    defense_name = normalize_defense(
+        defense=defense
+    )
+
     started = time.perf_counter()
 
     try:
@@ -502,17 +606,17 @@ def execute_with_timeout(
             [
                 sys.executable,
                 "-m",
-                "evaluation.generated_worker"
+                "evaluation.generated_worker",
             ],
             input=json.dumps({
                 "attack": attack,
-                "defended": defended
+                "defense": defense_name,
             }),
             capture_output=True,
             text=True,
             encoding="utf-8",
             timeout=timeout,
-            cwd=ROOT
+            cwd=ROOT,
         )
 
         if completed.returncode != 0:
@@ -528,30 +632,32 @@ def execute_with_timeout(
     except (
         subprocess.TimeoutExpired,
         RuntimeError,
-        json.JSONDecodeError
+        json.JSONDecodeError,
     ) as exc:
         duration = round(
-            time.perf_counter() - started, 2
+            time.perf_counter() - started,
+            2,
         )
 
         is_timeout = isinstance(
             exc,
-            subprocess.TimeoutExpired
+            subprocess.TimeoutExpired,
         )
 
         return failed_result(
             attack=attack,
-            defended=defended,
+            defense=defense_name,
             duration=duration,
             status=(
-                "timeout" if is_timeout
+                "timeout"
+                if is_timeout
                 else "error"
             ),
             error=(
                 f"Timeout after {timeout}s"
                 if is_timeout
                 else str(exc)
-            )
+            ),
         )
 
 
@@ -561,13 +667,25 @@ def main():
     parser.add_argument(
         "--limit",
         type=int,
-        default=None
+        default=None,
     )
 
     parser.add_argument(
         "--timeout",
         type=int,
-        default=120
+        default=120,
+    )
+
+    parser.add_argument(
+        "--defenses",
+        nargs="+",
+        choices=sorted(DEFENSES),
+        default=list(DEFAULT_DEFENSES),
+        help=(
+            "Defense strategies to evaluate. "
+            "Default: baseline prompt_guard "
+            "authorization layered"
+        ),
     )
 
     args = parser.parse_args()
@@ -585,8 +703,14 @@ def main():
             "--limit must be positive"
         )
 
+    # Preserve user order while rejecting duplicates.
+    defenses = list(
+        dict.fromkeys(args.defenses)
+    )
+
     with ATTACKS_PATH.open(
-        "r", encoding="utf-8"
+        "r",
+        encoding="utf-8",
     ) as file:
         all_attacks = json.load(file)
 
@@ -597,19 +721,22 @@ def main():
 
     config = experiment_config(
         all_attacks,
-        args.timeout
+        args.timeout,
+        defenses,
     )
+
     config_id = experiment_id(config)
 
     # Capture provenance before executing trials.
     manifest_path = save_experiment_manifest(
         config_id,
-        config
+        config,
     )
 
     checkpoint_path = RESULTS_DIR / (
         f"generated_checkpoint_{config_id}.json"
     )
+
     config_path = RESULTS_DIR / (
         f"generated_config_{config_id}.json"
     )
@@ -618,13 +745,14 @@ def main():
         config_path,
         {
             "experiment_id": config_id,
-            **config
-        }
+            **config,
+        },
     )
 
     if checkpoint_path.exists():
         with checkpoint_path.open(
-            "r", encoding="utf-8"
+            "r",
+            encoding="utf-8",
         ) as file:
             results = json.load(file)
     else:
@@ -633,15 +761,13 @@ def main():
     completed_keys = {
         (
             item["attack_id"],
-            item["mode"]
+            item["mode"],
         )
         for item in results
         if (
             item.get("error") is None
-            and item.get("status")
-            == "completed"
-            and item.get("valid_trial")
-            is True
+            and item.get("status") == "completed"
+            and item.get("valid_trial") is True
         )
     }
 
@@ -658,55 +784,55 @@ def main():
 
     for index, attack in enumerate(
         attacks,
-        start=1
+        start=1,
     ):
         print(
             f"[{index}/{len(attacks)}] "
             f"{attack['attack_id']}",
-            flush=True
+            flush=True,
         )
 
-        for defended in (False, True):
-            mode = (
-                "defended" if defended
-                else "baseline"
-            )
-
+        for defense_name in defenses:
             key = (
                 attack["attack_id"],
-                mode
+                defense_name,
             )
 
             if key in completed_keys:
                 print(
-                    f"  {mode}: already completed",
-                    flush=True
+                    f"  {defense_name}: "
+                    "already completed",
+                    flush=True,
                 )
                 continue
 
             print(
-                f"  {mode}: running...",
-                flush=True
+                f"  {defense_name}: running...",
+                flush=True,
             )
 
             result = execute_with_timeout(
                 attack,
-                defended,
+                defense_name,
                 args.timeout,
-                worker_path
+                worker_path,
             )
+
             # Attach experiment provenance to every result.
             result["experiment_id"] = config_id
             result["runner_version"] = RUNNER_VERSION
-            result["dataset_sha256"] = config["dataset_sha256"]
+            result["dataset_sha256"] = (
+                config["dataset_sha256"]
+            )
 
-            # Replace previous incomplete trials
-            # rather than creating duplicates.
+            # Replace previous incomplete trials rather than
+            # creating duplicates.
             results = [
-                item for item in results
+                item
+                for item in results
                 if (
                     item["attack_id"],
-                    item["mode"]
+                    item["mode"],
                 ) != key
             ]
 
@@ -714,47 +840,47 @@ def main():
 
             save_json(
                 checkpoint_path,
-                results
+                results,
             )
 
             if result.get("valid_trial"):
                 completed_keys.add(key)
 
             print(
-                f"  {mode}: "
+                f"  {defense_name}: "
                 f"success={result['attack_success']} "
                 f"status={result.get('status')} "
                 f"time={result['duration_seconds']}s "
                 f"error={result['error']}",
-                flush=True
+                flush=True,
             )
 
-    # Summarize only the selected attacks.
+    # Summarize only selected attacks and selected defenses.
     selected_ids = {
         attack["attack_id"]
         for attack in attacks
     }
 
     selected_results = [
-        item for item in results
-        if item["attack_id"] in selected_ids
+        item
+        for item in results
+        if (
+            item["attack_id"] in selected_ids
+            and item["mode"] in defenses
+        )
     ]
 
-    for mode in (
-        "baseline",
-        "defended"
-    ):
+    for defense_name in defenses:
         subset = [
             item
             for item in selected_results
-            if item["mode"] == mode
+            if item["mode"] == defense_name
         ]
 
         valid = [
             item
             for item in subset
-            if item.get("valid_trial")
-            is True
+            if item.get("valid_trial") is True
         ]
 
         successes = sum(
@@ -764,7 +890,8 @@ def main():
 
         rate = (
             100 * successes / len(valid)
-            if valid else 0
+            if valid
+            else 0
         )
 
         invalid = (
@@ -772,7 +899,7 @@ def main():
         )
 
         print(
-            f"{mode}: "
+            f"{defense_name}: "
             f"{successes}/{len(valid)} "
             f"successful ({rate:.1f}%), "
             f"invalid/incomplete={invalid}"
@@ -782,7 +909,8 @@ def main():
 
         for item in subset:
             status = item.get(
-                "status", "unknown"
+                "status",
+                "unknown",
             )
 
             statuses[status] = (
@@ -803,21 +931,29 @@ def main():
 
     save_json(
         path,
-        selected_results
+        selected_results,
     )
 
     print(
         f"Experiment ID: {config_id}"
     )
+
+    print(
+        f"Defenses: {', '.join(defenses)}"
+    )
+
     print(
         f"Manifest: {manifest_path}"
     )
+
     print(
         f"Configuration: {config_path}"
     )
+
     print(
         f"Checkpoint: {checkpoint_path}"
     )
+
     print(
         f"Saved results to {path}"
     )

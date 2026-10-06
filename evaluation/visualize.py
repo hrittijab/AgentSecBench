@@ -9,38 +9,56 @@ ROOT = Path(__file__).resolve().parent.parent
 RESULTS_DIR = ROOT / "results"
 
 
-def load_report(path):
-    with Path(path).open(
-        encoding="utf-8"
-    ) as f:
-        report = json.load(f)
+# ============================================================
+# Display helpers
+# ============================================================
 
-    if not isinstance(report, dict):
-        raise ValueError(
-            "Expected report as a dictionary"
-        )
 
-    if "overall" not in report:
-        raise ValueError(
-            "Report is missing 'overall'"
-        )
+MODE_LABELS = {
+    "baseline": "Baseline",
+    "prompt_guard": "Prompt Guard",
+    "authorization": "Authorization",
+    "layered": "Layered",
+    "defended": "Defended",
+}
 
-    if "categories" not in report:
-        raise ValueError(
-            "Report is missing 'categories'"
-        )
 
-    return report
+def display_mode(mode):
+    """
+    Return a human-readable label for a benchmark mode.
+    """
+
+    return MODE_LABELS.get(
+        mode,
+        mode.replace("_", " ").title(),
+    )
 
 
 def mode_order(modes):
     """
     Keep benchmark modes in a predictable order.
+
+    Supports both:
+        v1:
+            baseline
+            defended
+
+        v1.1:
+            baseline
+            prompt_guard
+            authorization
+            layered
     """
+
     preferred = [
         "baseline",
+        "prompt_guard",
+        "authorization",
+        "layered",
         "defended",
     ]
+
+    modes = list(modes)
 
     ordered = [
         mode
@@ -59,17 +77,74 @@ def mode_order(modes):
     return ordered
 
 
+# ============================================================
+# Report loading
+# ============================================================
+
+
+def load_report(path):
+    path = Path(path)
+
+    with path.open(
+        "r",
+        encoding="utf-8",
+    ) as file:
+        report = json.load(file)
+
+    if not isinstance(
+        report,
+        dict,
+    ):
+        raise ValueError(
+            "Expected report as a dictionary"
+        )
+
+    if "overall" not in report:
+        raise ValueError(
+            "Report is missing 'overall'"
+        )
+
+    if "categories" not in report:
+        raise ValueError(
+            "Report is missing 'categories'"
+        )
+
+    if not isinstance(
+        report["overall"],
+        dict,
+    ):
+        raise ValueError(
+            "Report 'overall' must be a dictionary"
+        )
+
+    if not isinstance(
+        report["categories"],
+        dict,
+    ):
+        raise ValueError(
+            "Report 'categories' must be a dictionary"
+        )
+
+    return report
+
+
+# ============================================================
+# Completed-trial ASR
+# ============================================================
+
+
 def save_attack_success_chart(
     report,
-    output_path
+    output_path,
 ):
     """
-    Plot completed-trial attack success rate.
+    Plot completed-trial attack success rate by defense.
 
-    Incomplete trials are deliberately excluded from
-    the denominator because this chart represents
-    verified completed-trial ASR.
+    Incomplete trials are deliberately excluded from the
+    denominator because this chart represents verified
+    completed-trial ASR.
     """
+
     overall = report["overall"]
 
     modes = mode_order(
@@ -79,21 +154,38 @@ def save_attack_success_chart(
     rates = []
 
     for mode in modes:
-        rate = overall[mode].get(
+        rate = overall[
+            mode
+        ].get(
             "completed_attack_success_rate"
         )
 
         rates.append(
-            0 if rate is None else rate * 100
+            0
+            if rate is None
+            else rate * 100
         )
 
-    fig, ax = plt.subplots(
-        figsize=(7, 5)
+    fig_width = max(
+        7,
+        len(modes) * 1.8,
     )
 
+    fig, ax = plt.subplots(
+        figsize=(
+            fig_width,
+            5,
+        )
+    )
+
+    labels = [
+        display_mode(mode)
+        for mode in modes
+    ]
+
     bars = ax.bar(
-        modes,
-        rates
+        labels,
+        rates,
     )
 
     ax.set_ylabel(
@@ -101,25 +193,36 @@ def save_attack_success_chart(
     )
 
     ax.set_title(
-        "Completed-Trial Attack Success Rate"
+        "Completed-Trial Attack Success Rate by Defense"
+    )
+
+    upper_limit = max(
+        100,
+        max(
+            rates,
+            default=0,
+        )
+        + 10,
     )
 
     ax.set_ylim(
         0,
-        max(100, max(rates, default=0) + 10)
+        upper_limit,
     )
 
     for bar, rate in zip(
         bars,
-        rates
+        rates,
     ):
         ax.text(
-            bar.get_x()
-            + bar.get_width() / 2,
+            (
+                bar.get_x()
+                + bar.get_width() / 2
+            ),
             bar.get_height() + 1,
             f"{rate:.1f}%",
             ha="center",
-            va="bottom"
+            va="bottom",
         )
 
     fig.tight_layout()
@@ -130,25 +233,42 @@ def save_attack_success_chart(
 
     output_path.parent.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
 
     fig.savefig(
         output_path,
         dpi=200,
-        bbox_inches="tight"
+        bbox_inches="tight",
     )
 
-    plt.close(fig)
+    plt.close(
+        fig
+    )
+
+
+# ============================================================
+# Security events
+# ============================================================
 
 
 def save_security_events_chart(
     report,
-    output_path
+    output_path,
 ):
     """
-    Compare unauthorized security events across modes.
+    Compare unauthorized security events across defenses.
+
+    Attempts show what the model proposed.
+
+    Executions show which unauthorized actions reached the
+    underlying tool boundary.
+
+    Matched disclosure represents trials where sensitive
+    customer data and the attacker-controlled recipient were
+    both observed in the executed behavior.
     """
+
     overall = report["overall"]
 
     modes = mode_order(
@@ -173,37 +293,74 @@ def save_security_events_chart(
     mode_values = {}
 
     for mode in modes:
-        metrics = overall[mode]
+        metrics = overall[
+            mode
+        ]
+
+        security = metrics.get(
+            "security",
+            {},
+        )
+
+        disclosure = metrics.get(
+            "disclosure",
+            {},
+        )
 
         values = [
-            metrics["security"][name]
+            security.get(
+                name,
+                0,
+            )
             for name in metric_names
         ]
 
         values.append(
-            metrics["disclosure"][
-                "trials_with_matched_disclosure"
-            ]
+            disclosure.get(
+                "trials_with_matched_disclosure",
+                0,
+            )
         )
 
-        mode_values[mode] = values
+        mode_values[
+            mode
+        ] = values
 
     x = list(
-        range(len(labels))
+        range(
+            len(labels)
+        )
     )
 
     width = (
-        0.8 / max(len(modes), 1)
+        0.8
+        / max(
+            len(modes),
+            1,
+        )
+    )
+
+    fig_width = max(
+        10,
+        len(modes) * 2.2,
     )
 
     fig, ax = plt.subplots(
-        figsize=(10, 5)
+        figsize=(
+            fig_width,
+            5.5,
+        )
     )
 
-    for index, mode in enumerate(modes):
+    for index, mode in enumerate(
+        modes
+    ):
         offset = (
-            index -
-            (len(modes) - 1) / 2
+            index
+            - (
+                len(modes) - 1
+            )
+            / 2
         ) * width
 
         positions = [
@@ -213,20 +370,29 @@ def save_security_events_chart(
 
         ax.bar(
             positions,
-            mode_values[mode],
+            mode_values[
+                mode
+            ],
             width=width,
-            label=mode
+            label=display_mode(
+                mode
+            ),
         )
 
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels)
+    ax.set_xticks(
+        x
+    )
+
+    ax.set_xticklabels(
+        labels
+    )
 
     ax.set_ylabel(
         "Event count"
     )
 
     ax.set_title(
-        "Unauthorized Security Events"
+        "Unauthorized Security Events by Defense"
     )
 
     ax.legend()
@@ -239,25 +405,34 @@ def save_security_events_chart(
 
     output_path.parent.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
 
     fig.savefig(
         output_path,
         dpi=200,
-        bbox_inches="tight"
+        bbox_inches="tight",
     )
 
-    plt.close(fig)
+    plt.close(
+        fig
+    )
+
+
+# ============================================================
+# Category ASR
+# ============================================================
 
 
 def save_category_asr_chart(
     report,
-    output_path
+    output_path,
 ):
     """
-    Compare completed-trial ASR by attack category.
+    Compare completed-trial attack success rate by category
+    and defense strategy.
     """
+
     categories = report[
         "categories"
     ]
@@ -278,32 +453,50 @@ def save_category_asr_chart(
     )
 
     x = list(
-        range(len(category_names))
+        range(
+            len(category_names)
+        )
     )
 
     width = (
-        0.8 / max(len(modes), 1)
+        0.8
+        / max(
+            len(modes),
+            1,
+        )
     )
 
     fig_width = max(
         9,
-        len(category_names) * 1.7
+        len(category_names)
+        * 1.8,
     )
 
     fig, ax = plt.subplots(
-        figsize=(fig_width, 6)
+        figsize=(
+            fig_width,
+            6,
+        )
     )
 
-    for index, mode in enumerate(modes):
+    for index, mode in enumerate(
+        modes
+    ):
         rates = []
 
-        for category in category_names:
+        for category in (
+            category_names
+        ):
             metrics = categories[
                 category
-            ].get(mode)
+            ].get(
+                mode
+            )
 
             if metrics is None:
-                rates.append(0)
+                rates.append(
+                    0
+                )
                 continue
 
             rate = metrics.get(
@@ -317,8 +510,11 @@ def save_category_asr_chart(
             )
 
         offset = (
-            index -
-            (len(modes) - 1) / 2
+            index
+            - (
+                len(modes) - 1
+            )
+            / 2
         ) * width
 
         positions = [
@@ -330,22 +526,27 @@ def save_category_asr_chart(
             positions,
             rates,
             width=width,
-            label=mode
+            label=display_mode(
+                mode
+            ),
         )
 
     labels = [
         category.replace(
             "_",
-            " "
+            " ",
         ).title()
         for category in category_names
     ]
 
-    ax.set_xticks(x)
+    ax.set_xticks(
+        x
+    )
+
     ax.set_xticklabels(
         labels,
         rotation=25,
-        ha="right"
+        ha="right",
     )
 
     ax.set_ylabel(
@@ -353,12 +554,12 @@ def save_category_asr_chart(
     )
 
     ax.set_title(
-        "Completed-Trial ASR by Attack Category"
+        "Completed-Trial ASR by Attack Category and Defense"
     )
 
     ax.set_ylim(
         0,
-        100
+        100,
     )
 
     ax.legend()
@@ -371,27 +572,36 @@ def save_category_asr_chart(
 
     output_path.parent.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
 
     fig.savefig(
         output_path,
         dpi=200,
-        bbox_inches="tight"
+        bbox_inches="tight",
     )
 
-    plt.close(fig)
+    plt.close(
+        fig
+    )
+
+
+# ============================================================
+# Visualization generation
+# ============================================================
 
 
 def generate_visualizations(
     report,
-    source
+    source,
 ):
     source = Path(
         source
     )
 
-    output_dir = source.parent
+    output_dir = (
+        source.parent
+    )
 
     stem = source.stem
 
@@ -399,37 +609,48 @@ def generate_visualizations(
         "_report"
     ):
         stem = stem[
-            :-len("_report")
+            :-len(
+                "_report"
+            )
         ]
 
     attack_success_path = (
-        output_dir /
-        f"{stem}_attack_success.png"
+        output_dir
+        / (
+            f"{stem}"
+            "_attack_success.png"
+        )
     )
 
     security_events_path = (
-        output_dir /
-        f"{stem}_security_events.png"
+        output_dir
+        / (
+            f"{stem}"
+            "_security_events.png"
+        )
     )
 
     category_asr_path = (
-        output_dir /
-        f"{stem}_category_asr.png"
+        output_dir
+        / (
+            f"{stem}"
+            "_category_asr.png"
+        )
     )
 
     save_attack_success_chart(
         report,
-        attack_success_path
+        attack_success_path,
     )
 
     save_security_events_chart(
         report,
-        security_events_path
+        security_events_path,
     )
 
     save_category_asr_chart(
         report,
-        category_asr_path
+        category_asr_path,
     )
 
     return {
@@ -445,16 +666,26 @@ def generate_visualizations(
     }
 
 
+# ============================================================
+# CLI
+# ============================================================
+
+
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Generate AgentSecBench security "
+            "benchmark visualizations."
+        )
+    )
 
     parser.add_argument(
         "--input",
         required=True,
         help=(
             "Path to an AgentSecBench "
-            "report JSON file"
-        )
+            "report JSON file."
+        ),
     )
 
     args = parser.parse_args()
@@ -469,28 +700,36 @@ def main():
 
     outputs = generate_visualizations(
         report,
-        source
+        source,
     )
 
     print(
         "\nAGENTSECBENCH VISUALIZATIONS"
     )
 
-    print("=" * 50)
+    print(
+        "=" * 50
+    )
 
     print(
         "Attack success:",
-        outputs["attack_success"]
+        outputs[
+            "attack_success"
+        ],
     )
 
     print(
         "Security events:",
-        outputs["security_events"]
+        outputs[
+            "security_events"
+        ],
     )
 
     print(
         "Category ASR:",
-        outputs["category_asr"]
+        outputs[
+            "category_asr"
+        ],
     )
 
 
