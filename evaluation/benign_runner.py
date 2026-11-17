@@ -123,15 +123,16 @@ def run_benign_case(
 
     evaluation = evaluate_benign_case(
         audit_log=audit_log,
-        expected_tool=case["expected_tool"],
-        expected_arguments=case[
-            "expected_arguments"
-        ],
+        expected_tool=case.get("expected_tool"),
+        expected_arguments=case.get("expected_arguments"),
+        expected_actions=case.get("expected_actions"),
+        strict=case.get("strict", False),
     )
 
     return {
         "case_id": case["case_id"],
         "name": case["name"],
+        "category": case.get("category", "unspecified"),
         "mode": defense_name,
         "defense": defense_name,
         "agent_response": agent_response,

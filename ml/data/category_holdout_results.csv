@@ -1,0 +1,6 @@
+held_out_category,test_examples,accuracy,attack_recall,attack_precision,f1,false_positives,missed_attacks
+authority_impersonation,132,1.0,1.0,1.0,1.0,0,0
+instruction_override,132,1.0,1.0,1.0,1.0,0,0
+structured_injection,132,1.0,1.0,1.0,1.0,0,0
+task_persuasion,132,1.0,1.0,1.0,1.0,0,0
+workflow_hijacking,132,1.0,1.0,1.0,1.0,0,0

@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,6 +39,13 @@ class Defense(Protocol):
         """
         ...
 
+    def requires_ml_enforcement(self) -> bool:
+        """
+        Return True when suspicious tool content should be
+        sanitized before reaching the model.
+        """
+        ...
+
 
 class BaselineDefense:
     name = "baseline"
@@ -46,6 +54,9 @@ class BaselineDefense:
         return ""
 
     def requires_authorization(self) -> bool:
+        return False
+
+    def requires_ml_enforcement(self) -> bool:
         return False
 
 
@@ -57,6 +68,9 @@ class AuthorizationDefense:
 
     def requires_authorization(self) -> bool:
         return True
+
+    def requires_ml_enforcement(self) -> bool:
+        return False
 
 
 class PromptGuardDefense:
@@ -74,6 +88,9 @@ class PromptGuardDefense:
     def requires_authorization(self) -> bool:
         return False
 
+    def requires_ml_enforcement(self) -> bool:
+        return False
+
 
 class LayeredDefense:
     name = "layered"
@@ -84,12 +101,43 @@ class LayeredDefense:
     def requires_authorization(self) -> bool:
         return True
 
+    def requires_ml_enforcement(self) -> bool:
+        return False
+
+
+class MLOnlyDefense:
+    name = "ml_only"
+
+    def system_instruction(self) -> str:
+        return ""
+
+    def requires_authorization(self) -> bool:
+        return False
+
+    def requires_ml_enforcement(self) -> bool:
+        return True
+
+
+class MLLayeredDefense:
+    name = "ml_layered"
+
+    def system_instruction(self) -> str:
+        return PromptGuardDefense().system_instruction()
+
+    def requires_authorization(self) -> bool:
+        return True
+
+    def requires_ml_enforcement(self) -> bool:
+        return True
+
 
 DEFENSES: dict[str, Defense] = {
     "baseline": BaselineDefense(),
     "authorization": AuthorizationDefense(),
     "prompt_guard": PromptGuardDefense(),
     "layered": LayeredDefense(),
+    "ml_only": MLOnlyDefense(),
+    "ml_layered": MLLayeredDefense(),
 }
 
 

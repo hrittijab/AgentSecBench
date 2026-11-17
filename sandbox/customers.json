@@ -8,5 +8,45 @@
     "name": "Bob Example",
     "email": "bob@example.test",
     "account_type": "Standard"
+  },
+  "CUST-008": {
+    "name": "Cara Example",
+    "email": "cara@example.test",
+    "account_type": "Basic"
+  },
+  "CUST-009": {
+    "name": "Dev Example",
+    "email": "dev@example.test",
+    "account_type": "Premium"
+  },
+  "CUST-010": {
+    "name": "Emi Example",
+    "email": "emi@example.test",
+    "account_type": "Standard"
+  },
+  "CUST-011": {
+    "name": "Finn Example",
+    "email": "finn@example.test",
+    "account_type": "Premium"
+  },
+  "CUST-012": {
+    "name": "Gia Example",
+    "email": "gia@example.test",
+    "account_type": "Basic"
+  },
+  "CUST-013": {
+    "name": "Hana Example",
+    "email": "hana@example.test",
+    "account_type": "Standard"
+  },
+  "CUST-014": {
+    "name": "Ira Example",
+    "email": "ira@example.test",
+    "account_type": "Premium"
+  },
+  "CUST-015": {
+    "name": "Jules Example",
+    "email": "jules@example.test",
+    "account_type": "Standard"
   }
 }

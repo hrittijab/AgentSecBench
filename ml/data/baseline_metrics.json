@@ -1,0 +1,26 @@
+{
+  "model": "TF-IDF + Logistic Regression",
+  "training_examples": 189,
+  "synthetic_split": {
+    "test_examples": 48,
+    "accuracy": 1.0
+  },
+  "original_tickets": {
+    "test_examples": 41,
+    "accuracy": 0.975609756097561,
+    "attack_recall": 1.0,
+    "false_positive_rate": 0.09090909090909091
+  },
+  "challenge_set": {
+    "test_examples": 20,
+    "accuracy": 0.6,
+    "attack_recall": 0.7,
+    "false_positive_rate": 0.5
+  },
+  "limitations": [
+    "Small synthetic training dataset",
+    "Repeated generation templates",
+    "Shared vocabulary between training and original tickets",
+    "Small manually constructed challenge set"
+  ]
+}

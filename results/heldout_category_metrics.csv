@@ -1,0 +1,9 @@
+held_out_category,model,train_size,test_size,test_positive_rate,accuracy,brier_score,roc_auc
+authority_impersonation,Logistic Regression,180,59,0.0,0.5084745762711864,0.1898136250866305,
+authority_impersonation,Random Forest,180,59,0.0,0.5084745762711864,0.20725519214809143,
+encoded_payload,Logistic Regression,179,60,0.0,0.5,0.19743076316422864,
+encoded_payload,Random Forest,179,60,0.0,0.5,0.210759983304899,
+instruction_override,Logistic Regression,179,60,0.5,0.5,0.24734329891024615,1.0
+instruction_override,Random Forest,179,60,0.5,0.5,0.23605328233420225,1.0
+workflow_hijacking,Logistic Regression,179,60,0.4666666666666667,0.5333333333333333,0.22000652423680336,0.96875
+workflow_hijacking,Random Forest,179,60,0.4666666666666667,0.5333333333333333,0.20972037950481343,0.96875

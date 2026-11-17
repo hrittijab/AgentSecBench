@@ -6,7 +6,7 @@
 
 AgentSecBench tests whether attacker-controlled content encountered by an AI agent can cause unauthorized tool actions or synthetic-data disclosure.
 
-Instead of measuring only whether a language model *follows* a malicious instruction, the benchmark observes what the agent actually attempts and executes at the tool boundary.
+Instead of measuring only whether a language model **follows** a malicious instruction, the benchmark observes what the agent actually attempts and executes at the tool boundary.
 
 ---
 
@@ -21,12 +21,14 @@ AgentSecBench models this problem in a controlled customer-support environment.
 An agent can:
 
 - read support tickets;
+
 - search synthetic customer records; and
+
 - send simulated emails.
 
 Attackers control lower-trust ticket content and attempt to manipulate the agent into accessing unauthorized customer information or sending information to unauthorized recipients.
 
-The benchmark compares:
+The original authorization experiment compares:
 
 **Baseline** — tool calls execute without the additional authorization policy.
 
@@ -38,43 +40,129 @@ The central question is:
 
 ---
 
-## Final Generated Benchmark
+## November 2026: Six-Defense Security–Utility Evaluation
+
+This is the project's **primary comparative defense study**. A local `qwen3:4b-instruct` customer-support agent was evaluated on **30 attack scenarios** and **50 legitimate tasks**, each under six defense configurations. The experiment produced **480 trials**: 180 attack trials and 300 benign trials.
+
+The six configurations were **baseline**, **authorization**, **prompt guard**, **layered**, **ML only**, and **ML + layered**. The ML-based configurations use a TF-IDF / logistic-regression detector to score lower-trust ticket content and selectively sanitize suspicious ticket bodies. Authorization checks are applied at the tool-execution boundary.
+
+### Observed outcomes
+
+| Defense | Successful attacks / 30 | Attack success rate ↓ | Successful benign tasks / 50 | Benign success rate ↑ |
+|---|---:|---:|---:|---:|
+| Baseline | 7 | 23.3% | 50 | 100.0% |
+| Authorization | 0 | 0.0% | 50 | 100.0% |
+| Prompt guard | 1 | 3.3% | 49 | 98.0% |
+| Layered | 0 | 0.0% | 49 | 98.0% |
+| ML only | 1 | 3.3% | 50 | 100.0% |
+| ML + layered | 0 | 0.0% | 48 | 96.0% |
+
+*Attack success counts are taken from the saved six-defense attack evaluation as previously inspected; benign counts are from the saved benign summary. The experiments were run once per scenario/defense combination. These are observed sample rates, not estimates of universal defense effectiveness.*
+
+### Key findings
+
+- **Authorization provided the strongest observed security–utility balance** in this sample: 0/30 successful attacks and 50/50 completed benign tasks.
+- Additional layers did **not** improve the observed attack-success metric over authorization alone. The layered and ML-layered configurations had lower benign completion (49/50 and 48/50, respectively).
+- **Four benign failures** were observed across 300 benign trials. Each involved a textual `search_customer(...)` response with no recorded tool execution or policy decision. This is consistent with the model emitting a tool-like string rather than a structured tool call; raw response inspection would be required to establish the exact mechanism.
+- A zero observed attack-success rate over 30 trials does **not** demonstrate perfect protection. Small samples, scenario dependence, and a single local model limit generalization.
+
+### Figures
+
+![Attack success by defense with Wilson confidence intervals](charts/attack_success_comparison.png)
+
+![Benign-task success by defense with Wilson confidence intervals](charts/benign_utility_comparison.png)
+
+![Observed security–utility tradeoff](charts/security_utility_tradeoff.png)
+
+Error bars in the first two figures are approximate 95% Wilson binomial intervals. They describe sampling uncertainty under a binomial assumption; repeated scenarios, shared templates, and stochastic model behavior can make that assumption optimistic. The scatterplot displays observed rates without uncertainty intervals.
+
+### Reproduce the benign evaluation
+
+After installing the project and starting Ollama with `qwen3:4b-instruct` available:
+
+```powershell
+python -m evaluation.benign_runner --defenses baseline authorization prompt_guard layered ml_only ml_layered --output results/benign_six_defense_comparison.json
+```
+
+The saved comparison artifacts are:
+
+```text
+results/six_defense_comparison.json
+results/benign_six_defense_comparison.json
+```
+
+The chart script, when present, can be run using:
+
+```powershell
+python -m evaluation.generate_final_charts
+```
+
+**Reproducibility note:** The chart-generation script currently uses explicitly specified attack-success counts and validates benign counts from the JSON. Parsing and validating attack outcomes directly from the saved attack artifact is a future improvement. Do not interpret the figures as fully artifact-derived until that validation is implemented. Repeated runs may vary due to model nondeterminism.
+
+---
+
+## Historical Generated Benchmark (October 2026)
 
 The completion-aware generated benchmark contains:
 
 - **120 attack variants**
+
 - **4 attack categories**
+
 - **2 execution modes per attack**
+
 - **240 total trial records**
+
 - **204 completed trials**
+
 - **35 truncated trials**
+
 - **1 timeout**
+
 - **0 execution errors**
+
 - **0 validation warnings**
+
 - **120/120 baseline-defended attack pairs**
 
 Experiment ID:
 
 ```text
+
 7657d6385a76
+
 ```
 
 ### Results
 
 | Metric | Baseline | Defended |
+
 |---|---:|---:|
+
 | Total trials | 120 | 120 |
+
 | Completed trials | 99 | 105 |
+
 | Truncated trials | 20 | 15 |
+
 | Timeouts | 1 | 0 |
+
 | Completed attack successes | 58 | 0 |
+
 | **Completed-trial ASR** | **58.6%** | **0.0%** |
+
 | Unauthorized lookup attempts | 42 | 43 |
+
 | Unauthorized lookup executions | 42 | 0 |
+
 | Unauthorized email attempts | 30 | 16 |
+
 | Unauthorized email executions | 30 | 0 |
+
 | Blocked lookup calls | 0 | 43 |
+
 | Blocked email calls | 0 | 16 |
+
 | Matched synthetic-data disclosure trials | 30 | 0 |
 
 The defended agent still **proposed unauthorized actions**.
@@ -89,13 +177,18 @@ These results do not establish universal prompt-injection resistance or producti
 
 ---
 
-## Category Results
+## October Generated Experiment Category Results
 
 | Attack category | Baseline completed ASR | Defended completed ASR |
+
 |---|---:|---:|
+
 | Workflow hijacking | 28/30 — 93.3% | 0/30 — 0.0% |
+
 | Authority impersonation | 0/29 — 0.0% | 0/30 — 0.0% |
+
 | Encoded payload | 0/10 — 0.0% | 0/15 — 0.0% |
+
 | Instruction override | 30/30 — 100.0% | 0/30 — 0.0% |
 
 The encoded-payload category had substantially lower completion rates than the other categories. Those incomplete trials are reported rather than silently treated as successful defenses.
@@ -104,7 +197,7 @@ Generated variants share underlying seeds and workflows, so category results sho
 
 ---
 
-## Results Visualization
+## October Generated Experiment Visualizations
 
 ### Completed-Trial Attack Success Rate
 
@@ -123,43 +216,81 @@ Generated variants share underlying seeds and workflows, so category results sho
 ## Architecture
 
 ```text
-                Attack Dataset
-                      |
-                      v
-                Payload Injector
-                      |
-                      v
-             Simulated Support Ticket
-                [Untrusted Data]
-                      |
-                      v
-                 AI Agent
-              (Ollama / Qwen3)
-                      |
-                      v
-              Proposed Tool Call
-                      |
-              +-------+-------+
-              |               |
-              v               v
-          Baseline         Defended
-          execution       authorization
-              |               |
-              |           Allow / Deny
-              |               |
-              +-------+-------+
-                      |
-                      v
-                 Tool Layer
-             read_ticket
-             search_customer
-             send_email
-                      |
-                      v
-                Audit Logs
-                      |
-                      v
-             Security Evaluation
+
+Attack Dataset
+
+|
+
+v
+
+Payload Injector
+
+|
+
+v
+
+Simulated Support Ticket
+
+[Untrusted Data]
+
+|
+
+v
+
+AI Agent
+
+(Ollama / Qwen3)
+
+|
+
+v
+
+Proposed Tool Call
+
+|
+
++-------+-------+
+
+|               |
+
+v               v
+
+Baseline         Defended
+
+execution       authorization
+
+|               |
+
+|           Allow / Deny
+
+|               |
+
++-------+-------+
+
+|
+
+v
+
+Tool Layer
+
+read_ticket
+
+search_customer
+
+send_email
+
+|
+
+v
+
+Audit Logs
+
+|
+
+v
+
+Security Evaluation
+
 ```
 
 The security boundary is deliberately placed between model-generated tool requests and privileged tool execution.
@@ -179,11 +310,17 @@ The attacker cannot directly modify the trusted user request, system configurati
 Attack objectives include:
 
 - unauthorized customer-record access;
+
 - unauthorized email delivery;
+
 - synthetic-data exfiltration;
+
 - workflow hijacking;
+
 - authority impersonation;
+
 - instruction override; and
+
 - encoded malicious instructions.
 
 Support-ticket content is treated as **task data, not authority**.
@@ -192,16 +329,20 @@ See [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) for the complete threat model
 
 ---
 
-## Defense
+## Authorization Policy
 
 The defended configuration applies deterministic authorization independently of the language model.
 
 Current policy:
 
 | Tool | Policy |
+
 |---|---|
+
 | `read_ticket` | Permitted under the benchmark threat model |
+
 | `search_customer` | Customer ID must be authorized |
+
 | `send_email` | Recipient must be authorized |
 
 Unauthorized calls are logged and denied before execution.
@@ -221,28 +362,37 @@ The current generated benchmark contains **120 attack variants derived from 30 s
 The generated suite covers:
 
 | Category | Objective |
+
 |---|---|
+
 | Workflow hijacking | Redirect the legitimate agent workflow |
+
 | Authority impersonation | Claim trusted administrative or operational authority |
+
 | Encoded payload | Conceal malicious instructions through encoding |
+
 | Instruction override | Attempt to supersede existing instructions |
 
 Attack definitions include the permitted customer and recipient scope used by the evaluator.
 
-The repository also preserves an earlier 30-scenario / 10-category attack suite and 15 benign support scenarios.
+The repository also preserves earlier attack and benign suites. The November comparison uses 30 attack scenarios and 50 benign scenarios.
 
 All benchmark data uses fictional customers and simulated operations.
 
 ---
 
-## Security Metrics
+## Security Metrics (October Generated Experiment)
 
 ### Completed-Trial Attack Success Rate
 
 ```text
+
 successful completed trials
+
 ---------------------------- × 100
+
 total completed trials
+
 ```
 
 Incomplete trials are not silently counted as successful defenses.
@@ -271,18 +421,28 @@ Absence of a match does not prove that every possible form of information leakag
 
 ## Validation
 
-The final generated result passed structural validation:
+The October generated result passed structural validation:
 
 ```text
+
 Valid: True
+
 attack_definitions: 120
+
 result_records: 240
+
 represented_attacks: 120
+
 paired_attacks: 120
+
 statuses: {'completed': 204, 'truncated': 35, 'timeout': 1}
+
 errors: 0
+
 warnings: 0
+
 partial_allowed: True
+
 ```
 
 `--allow-partial` permits incomplete individual trials to remain in the dataset while requiring them to be explicitly classified rather than treated as completed trials.
@@ -294,26 +454,43 @@ partial_allowed: True
 Generated experiments record:
 
 - experiment configuration;
+
 - deterministic experiment identifier;
+
 - model configuration;
+
 - maximum agent steps;
+
 - model output limits;
+
 - per-trial timeout;
+
 - Git revision information;
+
 - selected source-file hashes;
+
 - dataset hash;
+
 - Ollama model identity information;
+
 - completion status;
+
 - checkpoint state; and
+
 - structured trial outputs.
 
-The final experiment produced:
+The October experiment produced:
 
 ```text
+
 results/generated_attack_20261005_032352.json
+
 results/generated_manifest_7657d6385a76.json
+
 results/generated_config_7657d6385a76.json
+
 results/generated_checkpoint_7657d6385a76.json
+
 ```
 
 These mechanisms improve traceability but do not guarantee bit-for-bit identical model behavior across hardware, Ollama versions, or model/runtime implementations.
@@ -325,47 +502,65 @@ These mechanisms improve traceability but do not guarantee bit-for-bit identical
 ### Requirements
 
 - Python
+
 - Git
+
 - Ollama
+
 - Qwen3 4B Instruct
 
 Clone the repository:
 
 ```bash
-git clone https://github.com/hrittijab/AgentSecBench.git
+
+git clone https\://github.com/hrittijab/AgentSecBench.git
+
 cd AgentSecBench
+
 ```
 
 Create a virtual environment:
 
 ```bash
+
 python -m venv .venv
+
 ```
 
 Windows PowerShell:
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
+
+.\\.venv\Scripts\Activate.ps1
+
 ```
 
 macOS/Linux:
 
 ```bash
+
 source .venv/bin/activate
+
 ```
 
 Install:
 
 ```bash
+
 python -m pip install --upgrade pip
+
 pip install -r requirements.txt
+
 pip install -e .
+
 ```
 
 Prepare the local model:
 
 ```bash
+
 ollama pull qwen3:4b-instruct
+
 ```
 
 ---
@@ -375,7 +570,9 @@ ollama pull qwen3:4b-instruct
 AgentSecBench provides a unified command-line interface.
 
 ```bash
+
 agentsecbench --help
+
 ```
 
 ### Run
@@ -383,13 +580,17 @@ agentsecbench --help
 Small development run:
 
 ```bash
+
 agentsecbench run --limit 10 --timeout 180
+
 ```
 
 Full generated benchmark:
 
 ```bash
+
 agentsecbench run --timeout 180
+
 ```
 
 Local-model execution can take considerable time.
@@ -397,16 +598,23 @@ Local-model execution can take considerable time.
 ### Validate
 
 ```bash
-agentsecbench validate \
-  --input results/generated_attack_20261005_032352.json \
-  --allow-partial
+
+agentsecbench validate \\
+
+--input results/generated_attack_20261005_032352.json \\
+
+--allow-partial
+
 ```
 
 ### Report
 
 ```bash
-agentsecbench report \
-  --input results/generated_attack_20261005_032352.json
+
+agentsecbench report \\
+
+--input results/generated_attack_20261005_032352.json
+
 ```
 
 Reporting produces structured JSON plus overall and category CSV exports.
@@ -414,8 +622,11 @@ Reporting produces structured JSON plus overall and category CSV exports.
 ### Visualize
 
 ```bash
-agentsecbench visualize \
-  --input results/generated_attack_20261005_032352_report.json
+
+agentsecbench visualize \\
+
+--input results/generated_attack_20261005_032352_report.json
+
 ```
 
 The visualization layer produces attack-success, security-event, and category-level charts.
@@ -425,14 +636,19 @@ The visualization layer produces attack-success, security-event, and category-le
 Create or inspect experiment provenance:
 
 ```bash
+
 agentsecbench manifest
+
 ```
 
 Verify an existing manifest:
 
 ```bash
-agentsecbench manifest \
-  --verify results/generated_manifest_7657d6385a76.json
+
+agentsecbench manifest \\
+
+--verify results/generated_manifest_7657d6385a76.json
+
 ```
 
 ---
@@ -452,21 +668,33 @@ Experiment identity incorporates configuration and benchmark inputs so incompati
 Run the automated test suite with:
 
 ```bash
+
 python -m pytest -q
+
 ```
 
 The project includes unit and integration tests covering areas such as:
 
 - authorization decisions;
+
 - fail-closed policy behavior;
+
 - tool dispatch;
+
 - malformed tool calls;
+
 - agent-policy integration;
+
 - attack evaluation;
+
 - security metrics;
+
 - result validation;
+
 - reporting;
+
 - CLI behavior; and
+
 - regression cases.
 
 GitHub Actions runs the automated Python test suite on repository events.
@@ -478,51 +706,96 @@ The full Ollama-powered benchmark is intentionally separate from normal CI becau
 ## Repository Structure
 
 ```text
+
 AgentSecBench/
+
 |
+
 |-- agent/
-|   |-- agent.py
-|   |-- policy.py
-|   `-- tools.py
+
+|   |-- agent.py
+
+|   |-- policy.py
+
+|   `-- tools.py
+
 |
+
 |-- attacks/
-|   |-- attack_cases.json
-|   |-- benign_cases.json
-|   `-- generated_attacks.json
+
+|   |-- attack_cases.json
+
+|   |-- benign_cases.json
+
+|   `-- generated_attacks.json
+
 |
+
 |-- evaluation/
-|   |-- generated_runner.py
-|   |-- generated_worker.py
-|   |-- security_metrics.py
-|   |-- exfiltration.py
-|   |-- validator.py
-|   |-- report.py
-|   |-- visualize.py
-|   `-- manifest.py
+
+|   |-- generated_runner.py
+
+|   |-- generated_worker.py
+
+|   |-- security_metrics.py
+
+|   |-- exfiltration.py
+
+|   |-- validator.py
+
+|   |-- report.py
+
+|   |-- visualize.py
+
+|   `-- manifest.py
+
 |
+
 |-- sandbox/
-|   |-- customers.json
-|   `-- tickets.json
+
+|   |-- customers.json
+
+|   `-- tickets.json
+
 |
+
 |-- docs/
-|   |-- ARCHITECTURE.md
-|   `-- THREAT_MODEL.md
+
+|   |-- ARCHITECTURE.md
+
+|   `-- THREAT_MODEL.md
+
 |
+
 |-- tests/
+
 |
+
 |-- results/
+
 |
+
 |-- .github/workflows/
+
 |
+
 |-- cli.py
+
 |-- pyproject.toml
+
 |-- requirements.txt
+
 `-- README.md
+
 ```
 
 ---
 
 ## Limitations
+
+### November comparison
+
+The November evaluation uses one local model, 30 attack scenarios and 50 benign scenarios, each evaluated once per defense. Observed rates may change across seeds, prompts, model versions, or hardware. Four legitimate-task failures appear to involve non-executed tool-like text rather than policy denials. The ML detector was trained on synthetic examples, so performance on unseen real-world attacks is unknown.
 
 AgentSecBench is a controlled security benchmark, not a production agent-security certification system.
 
@@ -562,20 +835,23 @@ The disclosure detector identifies specific observable forms of synthetic-data e
 
 ---
 
-## Historical Results
+## Earlier Results and Comparison Caveats
 
 The repository preserves earlier benchmark outputs for development history and comparison.
 
 These include:
 
 - the original 30-scenario benchmark;
+
 - benign functionality experiments;
+
 - an earlier 120-variant generated run without completion metadata; and
+
 - preliminary completion-aware runs.
 
 Historical measurements should not be combined directly with the final completion-aware experiment because their evaluation procedures and metadata differ.
 
-The final generated experiment described above should be used as the primary benchmark result.
+The October generated experiment remains a separate historical result. The November six-defense evaluation is the primary comparative study in this README; do not pool their trial counts or attack-success rates.
 
 ---
 
@@ -586,14 +862,23 @@ Contributions are welcome.
 Useful areas include:
 
 - new indirect prompt-injection scenarios;
+
 - additional attack categories;
+
 - alternative authorization policies;
+
 - new sandbox tools and agent environments;
+
 - additional model/runtime support;
+
 - disclosure-detection techniques;
+
 - security metrics;
+
 - reproducibility improvements;
+
 - tests; and
+
 - documentation.
 
 For substantial benchmark changes, open an issue first so the threat model and expected evaluation behavior can be discussed before implementation.
@@ -607,12 +892,19 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development setup, benchmark contri
 Potential extensions include:
 
 - multi-model benchmarking;
+
 - retrieved-document, email, web, and search-result attack surfaces;
+
 - role-based and resource-level authorization;
+
 - alternative defense strategies;
+
 - broader disclosure detection;
+
 - benign-task quality evaluation;
+
 - authorization-performance measurements; and
+
 - additional reproducibility controls.
 
 ---
@@ -636,6 +928,7 @@ AgentSecBench is licensed under the Apache License 2.0. See [`LICENSE`](LICENSE)
 ## Technical Documentation
 
 - [System Architecture](docs/ARCHITECTURE.md)
+
 - [Threat Model](docs/THREAT_MODEL.md)
 
 ---
@@ -658,8 +951,8 @@ AgentSecBench is licensed under the Apache License 2.0. See [`LICENSE`](LICENSE)
 
 ## Project Status
 
-**Functional completion-aware security benchmark with a validated 120-attack generated experiment.**
+**Functional AI-agent security benchmark with an October generated experiment and a November six-defense security–utility evaluation.**
 
 AgentSecBench currently supports attack generation, local model execution, baseline/defended comparison, fail-closed authorization, tool auditing, checkpoint recovery, experiment provenance, result validation, security reporting, CSV export, visualization, and automated testing.
 
-The project is open to further benchmarking, defense research, and community contributions.
+The November comparative experiment completed 480 trials (180 attack and 300 benign), alongside the separately documented October generated experiment. The project remains open to further benchmarking, defense research, and community contributions.

@@ -3,12 +3,15 @@ import pytest
 from agent.defenses import DEFENSES, get_defense
 
 
+
 def test_expected_defenses_are_registered():
     assert set(DEFENSES) == {
         "baseline",
         "authorization",
         "prompt_guard",
         "layered",
+        "ml_only",
+        "ml_layered",
     }
 
 
